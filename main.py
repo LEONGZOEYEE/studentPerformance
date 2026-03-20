@@ -14,13 +14,12 @@ from sklearn.neural_network import MLPClassifier
 # -------------------------
 # Load & preprocess
 # -------------------------
+@st.cache_data
 def load_data(file_path):
     data = pd.read_csv(file_path)
 
     # Convert Exam Score → High Marks (1/0)
     data['High_Score'] = data['Exam_Score'].apply(lambda x: 1 if x >= 70 else 0)
-
-    # Drop original score
     data = data.drop(['Exam_Score'], axis=1)
 
     # Encode categorical columns
@@ -40,12 +39,12 @@ def load_data(file_path):
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    return X_train, X_test, y_train, y_test, X.columns, scaler
-
+    return X_train, X_test, y_train, y_test, X.columns, scaler, data
 
 # -------------------------
 # Train models
 # -------------------------
+@st.cache_data
 def train_models(X_train, y_train):
     models = {}
 
@@ -64,7 +63,7 @@ def train_models(X_train, y_train):
     return models
 
 # -------------------------
-# Evaluate models
+# Evaluate model accuracy
 # -------------------------
 def evaluate_models(models, X_test, y_test):
     results = {}
@@ -74,7 +73,6 @@ def evaluate_models(models, X_test, y_test):
         results[name] = (acc, y_pred)
     return results
 
-
 # -------------------------
 # Attendance vs Performance Graph
 # -------------------------
@@ -82,14 +80,12 @@ def plot_attendance_impact(data):
     bins = [0, 60, 80, 100]
     labels = ['Low (0-60)', 'Medium (60-80)', 'High (80-100)']
     data['Attendance_Group'] = pd.cut(data['Attendance'], bins=bins, labels=labels)
-
     grouped = data.groupby('Attendance_Group')['High_Score'].mean()
 
     plt.figure(figsize=(6,4))
     sns.barplot(x=grouped.index, y=grouped.values, palette="Blues_d")
-    grouped.plot(kind='bar')
     plt.title("Attendance vs Probability of High Marks")
-    plt.ylabel("Probability")
+    plt.ylabel("Probability of High Score")
     plt.xlabel("Attendance Level")
     st.pyplot(plt.gcf())
     plt.clf()
@@ -142,7 +138,7 @@ def main():
     plot_attendance_impact(raw_data)
 
     # -------------------------
-    # Prediction Section
+    # Predict New Student
     # -------------------------
     st.subheader("🔍 Predict Student Performance")
 
@@ -150,9 +146,7 @@ def main():
     study_hours = st.slider("Study Hours", 0, 30, 10)
     previous_score = st.slider("Previous Score", 0, 100, 60)
 
-    # Create input vector
     sample = np.zeros(len(feature_names))
-
     feature_list = list(feature_names)
 
     if "Attendance" in feature_list:
