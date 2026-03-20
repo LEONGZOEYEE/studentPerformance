@@ -157,14 +157,15 @@ def main():
 
     st.write(f"📊 Probability of HIGH marks: {round(prob*100,2)}%")
 
-    # Interpretation
+    # Interpretation with number
+    percentage = round(prob * 100, 2)
+    
     if prob > 0.7:
-        st.success("High chance of good performance 🎉")
+        st.success(f"High chance of good performance 🎉 ({percentage}%)")
     elif prob > 0.4:
-        st.warning("Moderate chance ⚠️")
+        st.warning(f"Moderate chance ⚠️ ({percentage}%)")
     else:
-        st.error("Low chance ❌")
-
+        st.error(f"Low chance ❌ ({percentage}%)")
 
 if __name__ == "__main__":
     main()
