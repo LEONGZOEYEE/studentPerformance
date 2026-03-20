@@ -83,15 +83,15 @@ def evaluate_model(y_true, y_pred):
 # -------------------------
 
 def main():
-    st.title("📊 Attendance Prediction System")
-    st.write("Predict student attendance level using ML models.")
+    st.title("📊 Student Performance System")
+    st.write("Predict Student Performance")
 
     file_path = "StudentPerformanceFactors.csv"
 
     try:
         X_train, X_test, y_train, y_test = load_and_preprocess_data(file_path)
     except Exception as e:
-        st.error(f"❌ Error loading dataset: {e}")
+        st.error(f"Error loading dataset: {e}")
         return
 
     # -------------------------
