@@ -150,13 +150,16 @@ def main():
     feature_list = list(feature_names)
 
     # Use median values for all features initially
-    sample = np.array([raw_data[col].median() if col != 'High_Score' else 0 for col in feature_list], dtype=float)
-
-# Then overwrite only the features you want to test
-sample[feature_list.index("Attendance")] = 84
-sample[feature_list.index("Hours_Studied")] = 26
-sample[feature_list.index("Previous_Scores")] = 84
-
+    sample = np.array([
+        raw_data[col].median() if col != 'High_Score' else 0
+        for col in feature_list
+    ], dtype=float)
+    
+    # Then overwrite only the features you want to test
+    sample[feature_list.index("Attendance")] = 84
+    sample[feature_list.index("Hours_Studied")] = 26
+    sample[feature_list.index("Previous_Scores")] = 84
+    
     sample = sample.reshape(1, -1)
     sample = scaler.transform(sample)
 
