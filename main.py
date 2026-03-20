@@ -62,7 +62,6 @@ def train_models(X_train, y_train):
 
     return models
 
-
 # -------------------------
 # Evaluate models
 # -------------------------
@@ -71,7 +70,7 @@ def evaluate_models(models, X_test, y_test):
     for name, model in models.items():
         y_pred = model.predict(X_test)
         acc = accuracy_score(y_test, y_pred)
-        results[name] = acc
+        results[name] = (acc, y_pred)
     return results
 
 
@@ -85,39 +84,55 @@ def plot_attendance_impact(data):
 
     grouped = data.groupby('Attendance_Group')['High_Score'].mean()
 
-    plt.figure()
+    plt.figure(figsize=(6,4))
+    sns.barplot(x=grouped.index, y=grouped.values, palette="Blues_d")
     grouped.plot(kind='bar')
     plt.title("Attendance vs Probability of High Marks")
     plt.ylabel("Probability")
     plt.xlabel("Attendance Level")
+    st.pyplot(plt.gcf())
+    plt.clf()
 
-    st.pyplot(plt)
-
+# -------------------------
+# Plot Confusion Matrix
+# -------------------------
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(4,3))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+    plt.title(f"{model_name} Confusion Matrix")
+    plt.ylabel("Actual")
+    plt.xlabel("Predicted")
+    st.pyplot(plt.gcf())
+    plt.clf()
 
 # -------------------------
 # Streamlit UI
 # -------------------------
 def main():
+    st.set_page_config(page_title="Student Performance Prediction", layout="wide")
     st.title("🎓 Student Performance Prediction System")
     st.write("Predict probability of achieving high marks (≥70)")
 
     file_path = "StudentPerformanceFactors.csv"
 
     # Load original data for graph
-    raw_data = pd.read_csv(file_path)
-    raw_data['High_Score'] = raw_data['Exam_Score'].apply(lambda x: 1 if x >= 70 else 0)
-
-    X_train, X_test, y_train, y_test, feature_names, scaler = load_data(file_path)
+    X_train, X_test, y_train, y_test, feature_names, scaler, raw_data = load_data(file_path)
     models = train_models(X_train, y_train)
 
     # -------------------------
-    # Model Accuracy
+    # Model Accuracy & Confusion Matrix
     # -------------------------
-    st.subheader("📊 Model Comparison")
+    st.subheader("📊 Model Comparison & Confusion Matrices")
     results = evaluate_models(models, X_test, y_test)
 
-    for name, acc in results.items():
-        st.write(f"{name}: {round(acc*100,2)}%")
+    # Use tabs for each model
+    tabs = st.tabs(["SVM", "KNN", "ANN"])
+    for i, model_name in enumerate(["SVM", "KNN", "ANN"]):
+        with tabs[i]:
+            acc, y_pred = results[model_name]
+            st.metric("Accuracy", f"{round(acc*100,2)}%")
+            plot_confusion_matrix(y_test, y_pred, model_name)
 
     # -------------------------
     # Attendance Impact Graph
@@ -149,23 +164,20 @@ def main():
     sample = sample.reshape(1, -1)
     sample = scaler.transform(sample)
 
-    # Select model
+    # Model selection
     model_choice = st.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
     model = models[model_choice]
 
     prob = model.predict_proba(sample)[0][1]
-
-    st.write(f"📊 Probability of HIGH marks: {round(prob*100,2)}%")
-
-    # Interpretation with number
     percentage = round(prob * 100, 2)
-    
+    st.metric("Probability of High Marks", f"{percentage}%")
+
     if prob > 0.7:
-        st.success(f"High chance of good performance 🎉 ({percentage}%)")
+        st.success("High chance of good performance 🎉")
     elif prob > 0.4:
-        st.warning(f"Moderate chance ⚠️ ({percentage}%)")
+        st.warning("Moderate chance ⚠️")
     else:
-        st.error(f"Low chance ❌ ({percentage}%)")
+        st.error("Low chance ❌")
 
 if __name__ == "__main__":
     main()
