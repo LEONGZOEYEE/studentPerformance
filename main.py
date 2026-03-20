@@ -6,7 +6,6 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-import matplotlib.pyplot as plt
 
 # ===============================
 # Streamlit App
@@ -15,70 +14,67 @@ def main():
     st.title("Student Performance Prediction (Practical Exercise)")
     st.write("Predict Pass/Fail based on student dataset using KNN, SVM, ANN.")
 
-    # -------------------------------
-    # Load CSV directly from GitHub
-    # -------------------------------
-    data = pd.read_csv("StudentPerformanceFactors.csv")
-    st.write("First 10 rows of dataset:")
-    st.dataframe(data.head(10))
+    # Upload CSV
+    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+    if uploaded_file is not None:
+        data = pd.read_csv(uploaded_file)
+        st.write("First 5 rows of dataset:")
+        st.dataframe(data.head())
 
-    # -------------------------------
-    # Create Pass/Fail target
-    # -------------------------------
-    threshold = st.slider("Pass threshold (Exam_Score >= ?)", 0, 100, 50)
-    data["Pass"] = data["Exam_Score"].apply(lambda x: 1 if x >= threshold else 0)
-    st.write("Pass/Fail distribution:")
-    st.bar_chart(data["Pass"].value_counts())
+        # Ensure Exam_Score exists
+        if "Exam_Score" not in data.columns:
+            st.error("CSV must include 'Exam_Score' column.")
+            return
 
-    # -------------------------------
-    # Preprocess data
-    # -------------------------------
-    data_encoded = pd.get_dummies(data)
-    X = data_encoded.drop(["Exam_Score","Pass"], axis=1)
-    y = data_encoded["Pass"]
+        # Pass threshold
+        threshold = st.slider("Pass threshold (Exam_Score >= ?)", 0, 100, 50)
+        data["Pass"] = data["Exam_Score"].apply(lambda x: 1 if x >= threshold else 0)
 
-    # -------------------------------
-    # Split data
-    # -------------------------------
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        st.write("Pass/Fail distribution:")
+        st.bar_chart(data["Pass"].value_counts())
 
-    # -------------------------------
-    # Scale features
-    # -------------------------------
-    scaler = StandardScaler()
-    X_train = scaler.fit_transform(X_train)
-    X_test = scaler.transform(X_test)
+        # Encode categorical features
+        data_encoded = pd.get_dummies(data)
+        X = data_encoded.drop(["Exam_Score", "Pass"], axis=1)
+        y = data_encoded["Pass"]
 
-    # -------------------------------
-    # Train models
-    # -------------------------------
-    models = {
-        "KNN": KNeighborsClassifier(n_neighbors=5),
-        "SVM": SVC(),
-        "ANN": MLPClassifier(hidden_layer_sizes=(10,10), max_iter=1000, random_state=42)
-    }
+        # Train-test split
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
+        )
 
-    st.write("### Model Results")
-    for name, model in models.items():
-        model.fit(X_train, y_train)
-        y_pred = model.predict(X_test)
+        # Scale features
+        scaler = StandardScaler()
+        X_train = scaler.fit_transform(X_train)
+        X_test = scaler.transform(X_test)
 
-        acc = accuracy_score(y_test, y_pred)
-        prec = precision_score(y_test, y_pred, zero_division=0)
-        rec = recall_score(y_test, y_pred, zero_division=0)
-        f1 = f1_score(y_test, y_pred, zero_division=0)
+        # Train models
+        models = {
+            "KNN": KNeighborsClassifier(n_neighbors=5),
+            "SVM": SVC(),
+            "ANN": MLPClassifier(hidden_layer_sizes=(10,10), max_iter=1000, random_state=42)
+        }
 
-        st.subheader(name)
-        st.write(f"Accuracy: {acc:.3f}, Precision: {prec:.3f}, Recall: {rec:.3f}, F1 Score: {f1:.3f}")
+        st.write("### Model Results")
+        results = []
+        for name, model in models.items():
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
 
-        # Optional: Confusion matrix
-        fig, ax = plt.subplots()
-        ax.matshow(pd.crosstab(y_test, y_pred), cmap="Blues", alpha=0.7)
-        for (i, j), val in np.ndenumerate(pd.crosstab(y_test, y_pred)):
-            ax.text(j, i, val, ha='center', va='center')
-        plt.xlabel("Predicted")
-        plt.ylabel("Actual")
-        st.pyplot(fig)
+            acc = accuracy_score(y_test, y_pred)
+            prec = precision_score(y_test, y_pred, zero_division=0)
+            rec = recall_score(y_test, y_pred, zero_division=0)
+            f1 = f1_score(y_test, y_pred, zero_division=0)
+
+            st.write(f"**{name}**")
+            st.write(f"Accuracy: {acc:.3f}, Precision: {prec:.3f}, Recall: {rec:.3f}, F1 Score: {f1:.3f}")
+            results.append({"Model": name, "Accuracy": acc, "F1 Score": f1})
+
+        # Comparison chart
+        if results:
+            df_results = pd.DataFrame(results).set_index("Model")
+            st.write("### Model Comparison (Accuracy & F1 Score)")
+            st.bar_chart(df_results)
 
 if __name__ == "__main__":
     main()
