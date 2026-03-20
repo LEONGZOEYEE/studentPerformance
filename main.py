@@ -95,7 +95,7 @@ def plot_attendance_impact(data):
 # -------------------------
 def plot_confusion_matrix(y_true, y_pred, model_name):
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(3,1))
+    plt.figure(figsize=(3,2))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
     plt.title(f"{model_name} Confusion Matrix")
     plt.ylabel("Actual")
