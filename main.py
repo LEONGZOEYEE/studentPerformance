@@ -82,11 +82,12 @@ def plot_attendance_impact(data):
     data['Attendance_Group'] = pd.cut(data['Attendance'], bins=bins, labels=labels)
     grouped = data.groupby('Attendance_Group')['High_Score'].mean()
 
-    plt.figure(figsize=(5,3))
+    plt.figure(figsize=(5,3))  # smaller size
     sns.barplot(x=grouped.index, y=grouped.values, palette="Blues_d")
-    plt.title("Attendance vs Probability of High Marks")
-    plt.ylabel("Probability of High Score")
-    plt.xlabel("Attendance Level")
+    plt.title("Attendance vs Probability of High Marks", fontsize=12)
+    plt.ylabel("Probability", fontsize=10)
+    plt.xlabel("Attendance Level", fontsize=10)
+    plt.ylim(0,1)
     st.pyplot(plt.gcf())
     plt.clf()
 
@@ -95,11 +96,11 @@ def plot_attendance_impact(data):
 # -------------------------
 def plot_confusion_matrix(y_true, y_pred, model_name):
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(3,2))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
-    plt.title(f"{model_name} Confusion Matrix")
-    plt.ylabel("Actual")
-    plt.xlabel("Predicted")
+    plt.figure(figsize=(4,3))  # smaller size
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", cbar=False, square=True)
+    plt.title(f"{model_name} Confusion Matrix", fontsize=12)
+    plt.ylabel("Actual", fontsize=10)
+    plt.xlabel("Predicted", fontsize=10)
     st.pyplot(plt.gcf())
     plt.clf()
 
