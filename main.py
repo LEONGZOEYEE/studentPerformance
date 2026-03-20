@@ -13,33 +13,36 @@ from sklearn.neural_network import MLPClassifier
 # -------------------------
 
 def load_and_preprocess_data(file_path):
-    data = pd.read_csv(file_path, sep=';')
+    data = pd.read_csv(file_path)
 
-    # Convert grade into categories
-    def grade_category(g):
-        if g < 10:
-            return 0
-        elif g < 15:
-            return 1
+    # ✅ Convert Attendance into categories
+    # (Adjust based on your dataset scale if needed)
+    def attendance_category(a):
+        if a < 50:
+            return 0   # Low
+        elif a < 75:
+            return 1   # Medium
         else:
-            return 2
+            return 2   # High
 
-    data['performance'] = data['G3'].apply(grade_category)
-    data = data.drop(['G1', 'G2', 'G3'], axis=1)
+    data['attendance_level'] = data['Attendance'].apply(attendance_category)
 
-    # Encode categorical data
-    categorical_cols = data.select_dtypes(include=['object']).columns
+    # Drop original attendance column from features
+    X = data.drop(['Attendance', 'attendance_level'], axis=1)
+    y = data['attendance_level']
+
+    # Encode categorical columns
+    categorical_cols = X.select_dtypes(include=['object']).columns
     le = LabelEncoder()
     for col in categorical_cols:
-        data[col] = le.fit_transform(data[col])
+        X[col] = le.fit_transform(X[col])
 
-    X = data.drop('performance', axis=1)
-    y = data['performance']
-
+    # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
     )
 
+    # Scaling
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
@@ -59,7 +62,6 @@ def train_knn(X_train, y_train):
     return model
 
 
-# ✅ REPLACED ANN (NO TENSORFLOW)
 def train_ann(X_train, y_train):
     model = MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500, random_state=42)
     model.fit(X_train, y_train)
@@ -81,23 +83,23 @@ def evaluate_model(y_true, y_pred):
 # -------------------------
 
 def main():
-    st.title("🎓 Student Performance Prediction")
-    st.write("Train ML models and evaluate performance.")
+    st.title("📊 Attendance Prediction System")
+    st.write("Predict student attendance level using ML models.")
 
-    file_path = "student-mat.csv"
+    file_path = "StudentPerformanceFactors.csv"
 
     try:
         X_train, X_test, y_train, y_test = load_and_preprocess_data(file_path)
-    except:
-        st.error("Dataset not found. Please upload 'student-mat.csv'")
+    except Exception as e:
+        st.error(f"❌ Error loading dataset: {e}")
         return
 
     # -------------------------
     # SVM
     # -------------------------
     if st.button("Train and Evaluate SVM"):
-        svm_model = train_svm(X_train, y_train)
-        y_pred = svm_model.predict(X_test)
+        model = train_svm(X_train, y_train)
+        y_pred = model.predict(X_test)
         results = evaluate_model(y_test, y_pred)
 
         st.subheader("SVM Results")
@@ -107,8 +109,8 @@ def main():
     # KNN
     # -------------------------
     if st.button("Train and Evaluate KNN"):
-        knn_model = train_knn(X_train, y_train)
-        y_pred = knn_model.predict(X_test)
+        model = train_knn(X_train, y_train)
+        y_pred = model.predict(X_test)
         results = evaluate_model(y_test, y_pred)
 
         st.subheader("KNN Results")
@@ -118,8 +120,8 @@ def main():
     # ANN (MLP)
     # -------------------------
     if st.button("Train and Evaluate ANN"):
-        ann_model = train_ann(X_train, y_train)
-        y_pred = ann_model.predict(X_test)
+        model = train_ann(X_train, y_train)
+        y_pred = model.predict(X_test)
         results = evaluate_model(y_test, y_pred)
 
         st.subheader("ANN Results (MLPClassifier)")
