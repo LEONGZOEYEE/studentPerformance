@@ -146,6 +146,9 @@ def main():
     study_hours = st.slider("Study Hours", 0, 30, 10)
     previous_score = st.slider("Previous Score", 0, 100, 60)
 
+    # Define feature list from feature names
+    feature_list = list(feature_names)
+
     # Use median values for all features initially
     sample = np.array([raw_data[col].median() if col != 'High_Score' else 0 for col in feature_list], dtype=float)
 
