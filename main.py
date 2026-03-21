@@ -145,6 +145,10 @@ def main():
 
     results = evaluate_models(models, X_test, y_test)
 
+    for i, name in enumerate(["SVM", "KNN", "ANN"]):
+    res = results[name]
+    plot_confusion_matrix(y_test, res["y_pred"], name)
+
     # =========================
     # MODEL SECTION
     # =========================
