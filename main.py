@@ -213,12 +213,24 @@ def main():
 
     # Explanation
     st.subheader("🧠 Explanation")
+    
+    explanations = []
+    
     if attendance < 60:
-        st.write("• Low attendance")
+        explanations.append("Low attendance may reduce performance")
+    
     if study < 10:
-        st.write("• Low study hours")
+        explanations.append("Insufficient study hours")
+    
     if prev < 50:
-        st.write("• Weak past performance")
+        explanations.append("Weak previous academic record")
+    
+    # ✅ If no issues → positive message
+    if not explanations:
+        explanations.append("Strong academic profile — high chance of success")
+    
+    for exp in explanations:
+        st.write(f"• {exp}")
 
     # Download
     df = pd.DataFrame({
