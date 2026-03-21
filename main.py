@@ -85,24 +85,27 @@ def evaluate_models(models, X_test, y_test):
 # =========================
 # PLOTS
 # =========================
-def plot_confusion_matrix(y_true, y_pred, model_name):
-    cm = confusion_matrix(y_true, y_pred)
-    plt.figure()
-    sns.heatmap(cm, annot=True, fmt="d")
-    plt.title(f"{model_name} Confusion Matrix")
-    st.pyplot(plt.gcf())
-    plt.clf()
-
-
 def plot_roc_curve(results):
     plt.figure()
     for name in results:
         plt.plot(results[name]["fpr"], results[name]["tpr"],
                  label=f"{name} (AUC={results[name]['auc']:.2f})")
-
     plt.plot([0, 1], [0, 1], linestyle='--')
     plt.legend()
     plt.title("ROC Comparison")
+    st.pyplot(plt.gcf())
+    plt.clf()
+
+def plot_roc_curve(results):
+    plt.figure(figsize=(6,4))
+    for name in results:
+        plt.plot(results[name]["fpr"], results[name]["tpr"],
+                 label=f"{name} (AUC={results[name]['auc']:.2f})")
+    plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label="Random")
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve Comparison")
+    plt.legend()
     st.pyplot(plt.gcf())
     plt.clf()
 
