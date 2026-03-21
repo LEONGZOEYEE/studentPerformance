@@ -186,25 +186,42 @@ def main():
     # -------------------------
     # Model Comparison
     # -------------------------
-    st.subheader("📊 Model Evaluation Metrics")
-    
+    st.subheader("📊 Model Comparison (Tabbed View)")
+    best_model = max(results, key=lambda x: results[x]["accuracy"])
+    st.success(f"🏆 Best Model: {best_model}")
+
     results = evaluate_models(models, X_test, y_test)
     
-    for model_name in results:
-        st.markdown(f"### {model_name}")
+    tabs = st.tabs(["SVM", "KNN", "ANN"])
+    
+    for i, model_name in enumerate(["SVM", "KNN", "ANN"]):
+        with tabs[i]:
+            res = results[model_name]
+    
+            # Metrics
+            st.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
+            st.metric("Precision", f"{res['precision']:.2f}")
+            st.metric("Recall", f"{res['recall']:.2f}")
+            st.metric("F1 Score", f"{res['f1']:.2f}")
+            st.metric("AUC", f"{res['auc']:.2f}")
+    
+            # Confusion Matrix
+            st.write("### Confusion Matrix")
+            plot_confusion_matrix(y_test, res["y_pred"], model_name)
+    
+            # ROC Curve (single model)
+            st.write("### ROC Curve")
+            plt.figure()
+            plt.plot(res["fpr"], res["tpr"], label=f"AUC = {res['auc']:.2f}")
+            plt.plot([0, 1], [0, 1], linestyle='--')
+            plt.xlabel("False Positive Rate")
+            plt.ylabel("True Positive Rate")
+            plt.title(f"{model_name} ROC Curve")
+            plt.legend()
+    
+            st.pyplot(plt.gcf())
+            plt.clf()
         
-        st.write(f"Accuracy: {results[model_name]['accuracy']:.2f}")
-        st.write(f"Precision: {results[model_name]['precision']:.2f}")
-        st.write(f"Recall: {results[model_name]['recall']:.2f}")
-        st.write(f"F1 Score: {results[model_name]['f1']:.2f}")
-        st.write(f"AUC: {results[model_name]['auc']:.2f}")
-    
-        plot_confusion_matrix(y_test, results[model_name]["y_pred"], model_name)
-    
-    # ROC Curve
-    st.subheader("📈 ROC Curve")
-    plot_roc_curve(results)
-
     # -------------------------
     # Attendance Impact
     # -------------------------
