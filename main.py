@@ -167,11 +167,12 @@ def main():
             col3.metric("Recall", f"{res['recall']:.2f}")
             col4.metric("F1 Score", f"{res['f1']:.2f}")
             col5.metric("AUC", f"{res['auc']:.2f}")
-
+            
+            st.subheader("📈 Confusion Matrix Comparison")
             plot_confusion_matrix(y_test, res["y_pred"], name)
 
-    st.subheader("📈 ROC Curve Comparison")
-    plot_roc_curve(results)
+            st.subheader("📈 ROC Curve Comparison")
+            plot_roc_curve(results)
 
     # =========================
     # SUBHEADER INPUT
