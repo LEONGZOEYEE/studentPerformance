@@ -161,7 +161,7 @@ def main():
     study = st.slider("Study Hours", 0, 30, 10)
     prev = st.slider("Previous Score", 0, 100, 60)
 
-    model_choice = st.sidebar.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
+    model_choice = st.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
 
     # =========================
     # PREDICTION
