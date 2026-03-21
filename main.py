@@ -41,10 +41,11 @@ def load_data(file_path):
 
     return X_train, X_test, y_train, y_test, X.columns, scaler, data
 
+
 # -------------------------
 # Train models
 # -------------------------
-@st.cache_data
+@st.cache_resource
 def train_models(X_train, y_train):
     models = {}
 
@@ -56,11 +57,17 @@ def train_models(X_train, y_train):
     knn.fit(X_train, y_train)
     models['KNN'] = knn
 
-    ann = MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500, random_state=42)
+    ann = MLPClassifier(
+        hidden_layer_sizes=(64, 32),
+        max_iter=500,
+        early_stopping=True,
+        random_state=42
+    )
     ann.fit(X_train, y_train)
     models['ANN'] = ann
 
     return models
+
 
 # -------------------------
 # Evaluate model accuracy
@@ -73,72 +80,94 @@ def evaluate_models(models, X_test, y_test):
         results[name] = (acc, y_pred)
     return results
 
+
 # -------------------------
 # Attendance vs Performance Graph
 # -------------------------
 def plot_attendance_impact(data):
+    temp = data.copy()
+
     bins = [0, 60, 80, 100]
     labels = ['Low (0-60)', 'Medium (60-80)', 'High (80-100)']
-    data['Attendance_Group'] = pd.cut(data['Attendance'], bins=bins, labels=labels)
-    grouped = data.groupby('Attendance_Group')['High_Score'].mean()
+    temp['Attendance_Group'] = pd.cut(temp['Attendance'], bins=bins, labels=labels)
 
-    plt.figure(figsize=(5,3))
-    sns.barplot(x=grouped.index, y=grouped.values, palette="Blues_d")
+    grouped = temp.groupby('Attendance_Group')['High_Score'].mean()
+
+    plt.figure(figsize=(5, 3))
+    sns.barplot(x=grouped.index, y=grouped.values)
     plt.title("Attendance vs Probability of High Marks")
     plt.ylabel("Probability of High Score")
     plt.xlabel("Attendance Level")
+
     st.pyplot(plt.gcf())
     plt.clf()
+
 
 # -------------------------
 # Plot Confusion Matrix
 # -------------------------
 def plot_confusion_matrix(y_true, y_pred, model_name):
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(3,2))
+
+    plt.figure(figsize=(3, 2))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
     plt.title(f"{model_name} Confusion Matrix")
     plt.ylabel("Actual")
     plt.xlabel("Predicted")
+
     st.pyplot(plt.gcf())
     plt.clf()
+
 
 # -------------------------
 # Streamlit UI
 # -------------------------
 def main():
     st.set_page_config(page_title="Student Performance Prediction", layout="wide")
+
     st.title("🎓 Student Performance Prediction System")
     st.write("Predict probability of achieving high marks (≥70)")
 
     file_path = "StudentPerformanceFactors.csv"
 
-    # Load original data for graph
+    # Load data
     X_train, X_test, y_train, y_test, feature_names, scaler, raw_data = load_data(file_path)
+
+    # Check required columns
+    required_cols = ["Attendance", "Hours_Studied", "Previous_Scores"]
+    for col in required_cols:
+        if col not in feature_names:
+            st.error(f"Missing column in dataset: {col}")
+            st.stop()
+
     models = train_models(X_train, y_train)
 
     # -------------------------
-    # Model Accuracy & Confusion Matrix
+    # Model Comparison
     # -------------------------
     st.subheader("📊 Model Comparison & Confusion Matrices")
+
     results = evaluate_models(models, X_test, y_test)
 
-    # Use tabs for each model
     tabs = st.tabs(["SVM", "KNN", "ANN"])
     for i, model_name in enumerate(["SVM", "KNN", "ANN"]):
         with tabs[i]:
             acc, y_pred = results[model_name]
-            st.metric("Accuracy", f"{round(acc*100,2)}%")
+            st.metric("Accuracy", f"{round(acc * 100, 2)}%")
             plot_confusion_matrix(y_test, y_pred, model_name)
 
+    # Best model
+    best_model = max(results, key=lambda x: results[x][0])
+    st.success(f"🏆 Best Model: {best_model}")
+
     # -------------------------
-    # Attendance Impact Graph
+    # Attendance Impact
     # -------------------------
     st.subheader("📈 Attendance Impact Analysis")
     plot_attendance_impact(raw_data)
 
     # -------------------------
-    # Predict New Student
+    # Prediction Section
     # -------------------------
     st.subheader("🔍 Predict Student Performance")
 
@@ -146,21 +175,21 @@ def main():
     study_hours = st.slider("Study Hours", 0, 30, 10)
     previous_score = st.slider("Previous Score", 0, 100, 60)
 
-    # Define feature list from feature names
     feature_list = list(feature_names)
 
-    # Use median values for all features initially
-    sample = np.array([
-        raw_data[col].median() if col != 'High_Score' else 0
-        for col in feature_list
-    ], dtype=float)
-    
-    # Then overwrite only the features you want to test
-    sample[feature_list.index("Attendance")] = 84
-    sample[feature_list.index("Hours_Studied")] = 26
-    sample[feature_list.index("Previous_Scores")] = 84
-    
-    sample = sample.reshape(1, -1)
+    # Build input sample
+    sample_dict = {}
+    for col in feature_list:
+        if col == "Attendance":
+            sample_dict[col] = attendance
+        elif col == "Hours_Studied":
+            sample_dict[col] = study_hours
+        elif col == "Previous_Scores":
+            sample_dict[col] = previous_score
+        else:
+            sample_dict[col] = raw_data[col].median()
+
+    sample = np.array(list(sample_dict.values())).reshape(1, -1)
     sample = scaler.transform(sample)
 
     # Model selection
@@ -169,6 +198,7 @@ def main():
 
     prob = model.predict_proba(sample)[0][1]
     percentage = round(prob * 100, 2)
+
     st.metric("Probability of High Marks", f"{percentage}%")
 
     if prob > 0.7:
@@ -178,5 +208,9 @@ def main():
     else:
         st.error("Low chance ❌")
 
+
+# -------------------------
+# Run app
+# -------------------------
 if __name__ == "__main__":
     main()
