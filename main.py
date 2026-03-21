@@ -85,14 +85,15 @@ def evaluate_models(models, X_test, y_test):
 # =========================
 # PLOTS
 # =========================
-def plot_roc_curve(results):
-    plt.figure()
-    for name in results:
-        plt.plot(results[name]["fpr"], results[name]["tpr"],
-                 label=f"{name} (AUC={results[name]['auc']:.2f})")
-    plt.plot([0, 1], [0, 1], linestyle='--')
-    plt.legend()
-    plt.title("ROC Comparison")
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(4,3))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=["Low Score", "High Score"],
+                yticklabels=["Low Score", "High Score"])
+    plt.ylabel("Actual")
+    plt.xlabel("Predicted")
+    plt.title(f"{model_name} Confusion Matrix")
     st.pyplot(plt.gcf())
     plt.clf()
 
