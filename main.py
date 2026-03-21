@@ -106,6 +106,23 @@ def plot_roc_curve(results):
     st.pyplot(plt.gcf())
     plt.clf()
 
+def plot_input_vs_average(input_vals, averages):
+    plt.figure(figsize=(5,3))
+    
+    labels = list(input_vals.keys())
+    input_data = list(input_vals.values())
+    avg_data = [averages[f] for f in labels]
+    x = np.arange(len(labels))
+    width = 0.35
+    
+    plt.bar(x - width/2, input_data, width, label="Your Input", color='skyblue')
+    plt.bar(x + width/2, avg_data, width, label="Average Success", color='orange')
+    plt.xticks(x, labels)
+    plt.ylabel("Value")
+    plt.title("Your Input vs Average of Successful Students")
+    plt.legend()
+    st.pyplot(plt.gcf())
+    plt.clf()
 
 # =========================
 # MAIN APP
@@ -153,7 +170,7 @@ def main():
     plot_roc_curve(results)
 
     # =========================
-    # SIDEBAR INPUT
+    # SUBHEADER INPUT
     # =========================
     st.subheader("🔧 Input Parameters")
 
@@ -185,26 +202,22 @@ def main():
         st.error("Low performance risk ❌")
 
     # =========================
-    # EXPLANATION
+    # EXPLANATION (dynamic)
     # =========================
     st.subheader("🧠 Explanation")
+    averages = raw_data[raw_data['High_Score']==1][['Attendance','Hours_Studied','Previous_Scores']].mean()
+    input_vals = {"Attendance": attendance, "Hours_Studied": study, "Previous_Scores": prev}
 
     explanations = []
+    for f in input_vals:
+        if input_vals[f] >= averages[f]:
+            explanations.append(f"{f} ({input_vals[f]}) is above average of successful students ({averages[f]:.1f}) ✅")
+        else:
+            explanations.append(f"{f} ({input_vals[f]}) is below average of successful students ({averages[f]:.1f}) ⚠️")
+    for line in explanations:
+        st.write("•", line)
 
-    if attendance < 60:
-        explanations.append("Low attendance may affect performance")
-
-    if study < 10:
-        explanations.append("Insufficient study hours")
-
-    if prev < 50:
-        explanations.append("Weak previous academic record")
-
-    if not explanations:
-        explanations.append("Strong academic profile")
-
-    for e in explanations:
-        st.write(f"• {e}")
+    plot_input_vs_average(input_vals, averages)
 
     # =========================
     # DOWNLOAD
