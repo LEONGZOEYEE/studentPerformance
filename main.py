@@ -11,20 +11,17 @@ from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 
-# -------------------------
-# Load & preprocess
-# -------------------------
+# =========================
+# LOAD DATA
+# =========================
 @st.cache_data
 def load_data(file_path):
     data = pd.read_csv(file_path)
 
     data['High_Score'] = data['Exam_Score'].apply(lambda x: 1 if x >= 70 else 0)
-    data = data.drop(['Exam_Score'], axis=1)
 
-    categorical_cols = data.select_dtypes(include=['object']).columns
-    le = LabelEncoder()
-    for col in categorical_cols:
-        data[col] = le.fit_transform(data[col])
+    # 👉 ONLY USE IMPORTANT FEATURES (LOGIC FIX)
+    data = data[['Attendance', 'Hours_Studied', 'Previous_Scores', 'High_Score']]
 
     X = data.drop('High_Score', axis=1)
     y = data['High_Score']
@@ -40,9 +37,9 @@ def load_data(file_path):
     return X_train, X_test, y_train, y_test, X.columns, scaler, data
 
 
-# -------------------------
-# Train models
-# -------------------------
+# =========================
+# TRAIN MODELS
+# =========================
 @st.cache_resource
 def train_models(X_train, y_train):
     models = {}
@@ -59,9 +56,9 @@ def train_models(X_train, y_train):
     return models
 
 
-# -------------------------
-# Evaluate models
-# -------------------------
+# =========================
+# EVALUATE MODELS
+# =========================
 def evaluate_models(models, X_test, y_test):
     results = {}
 
@@ -85,13 +82,13 @@ def evaluate_models(models, X_test, y_test):
     return results
 
 
-# -------------------------
-# Plots
-# -------------------------
+# =========================
+# PLOTS
+# =========================
 def plot_confusion_matrix(y_true, y_pred, model_name):
     cm = confusion_matrix(y_true, y_pred)
-    plt.figure(figsize=(3, 2))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
+    plt.figure()
+    sns.heatmap(cm, annot=True, fmt="d")
     plt.title(f"{model_name} Confusion Matrix")
     st.pyplot(plt.gcf())
     plt.clf()
@@ -99,53 +96,40 @@ def plot_confusion_matrix(y_true, y_pred, model_name):
 
 def plot_roc_curve(results):
     plt.figure()
-    for model_name in results:
-        plt.plot(results[model_name]["fpr"], results[model_name]["tpr"],
-                 label=f"{model_name} (AUC={results[model_name]['auc']:.2f})")
+    for name in results:
+        plt.plot(results[name]["fpr"], results[name]["tpr"],
+                 label=f"{name} (AUC={results[name]['auc']:.2f})")
 
     plt.plot([0, 1], [0, 1], linestyle='--')
-    plt.xlabel("False Positive Rate")
-    plt.ylabel("True Positive Rate")
-    plt.title("ROC Curve Comparison")
     plt.legend()
+    plt.title("ROC Comparison")
     st.pyplot(plt.gcf())
     plt.clf()
 
 
-def plot_attendance_impact(data):
-    temp = data.copy()
-    bins = [0, 60, 80, 100]
-    labels = ['Low', 'Medium', 'High']
-
-    temp['Attendance_Group'] = pd.cut(temp['Attendance'], bins=bins, labels=labels)
-    grouped = temp.groupby('Attendance_Group', observed=True)['High_Score'].mean()
-
-    plt.figure()
-    sns.barplot(x=grouped.index, y=grouped.values)
-    plt.title("Attendance Impact")
-    st.pyplot(plt.gcf())
-    plt.clf()
-
-
-# -------------------------
-# Main App
-# -------------------------
+# =========================
+# MAIN APP
+# =========================
 def main():
     st.set_page_config(layout="wide")
+
     st.title("🎓 Student Performance Prediction System")
+    st.caption("Predict probability of achieving high marks (≥70)")
 
     file_path = "StudentPerformanceFactors.csv"
 
     X_train, X_test, y_train, y_test, feature_names, scaler, raw_data = load_data(file_path)
-    models = train_models(X_train, y_train)
 
-    # ✅ FIXED: results before using
+    with st.spinner("Training models..."):
+        models = train_models(X_train, y_train)
+
     results = evaluate_models(models, X_test, y_test)
 
-    # -------------------------
-    # Model Tabs
-    # -------------------------
+    # =========================
+    # MODEL SECTION
+    # =========================
     st.subheader("📊 Model Comparison")
+    st.divider()
 
     best_model = max(results, key=lambda x: results[x]["accuracy"])
     st.success(f"🏆 Best Model: {best_model}")
@@ -156,92 +140,86 @@ def main():
         with tabs[i]:
             res = results[name]
 
-            col1, col2, col3, col4, col5 = st.columns(5)
+            col1, col2, col3 = st.columns(3)
             col1.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
             col2.metric("Precision", f"{res['precision']:.2f}")
             col3.metric("Recall", f"{res['recall']:.2f}")
+
+            col4, col5 = st.columns(2)
             col4.metric("F1 Score", f"{res['f1']:.2f}")
             col5.metric("AUC", f"{res['auc']:.2f}")
 
             plot_confusion_matrix(y_test, res["y_pred"], name)
 
-            plt.figure()
-            plt.plot(res["fpr"], res["tpr"], label=f"AUC={res['auc']:.2f}")
-            plt.plot([0, 1], [0, 1], linestyle='--')
-            plt.legend()
-            st.pyplot(plt.gcf())
-            plt.clf()
-
-    # -------------------------
-    # Combined ROC
-    # -------------------------
     st.subheader("📈 ROC Curve Comparison")
     plot_roc_curve(results)
 
-    # -------------------------
-    # Attendance Analysis
-    # -------------------------
-    st.subheader("📊 Attendance Analysis")
-    plot_attendance_impact(raw_data)
+    # =========================
+    # SIDEBAR INPUT
+    # =========================
+    st.sidebar.header("🔧 Input Parameters")
 
-    # -------------------------
-    # Prediction
-    # -------------------------
-    st.subheader("🔍 Prediction")
+    attendance = st.sidebar.slider("Attendance (%)", 0, 100, 75)
+    study = st.sidebar.slider("Study Hours", 0, 30, 10)
+    prev = st.sidebar.slider("Previous Score", 0, 100, 60)
 
-    attendance = st.slider("Attendance", 0, 100, 75)
-    study = st.slider("Study Hours", 0, 30, 10)
-    prev = st.slider("Previous Score", 0, 100, 60)
+    model_choice = st.sidebar.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
 
-    sample = []
-    for col in feature_names:
-        if col == "Attendance":
-            sample.append(attendance)
-        elif col == "Hours_Studied":
-            sample.append(study)
-        elif col == "Previous_Scores":
-            sample.append(prev)
-        else:
-            sample.append(raw_data[col].median())
+    # =========================
+    # PREDICTION
+    # =========================
+    st.subheader("🔍 Prediction Result")
+    st.divider()
 
-    sample = scaler.transform([sample])
+    sample = scaler.transform([[attendance, study, prev]])
 
-    model_choice = st.selectbox("Model", ["SVM", "KNN", "ANN"])
     prob = models[model_choice].predict_proba(sample)[0][1]
 
-    st.metric("Probability", f"{prob*100:.2f}%")
+    st.metric("Probability of High Marks", f"{prob*100:.2f}%")
+    st.progress(float(prob))
 
-    # Explanation
+    # Feedback
+    if prob > 0.7:
+        st.success("High chance of success 🎉")
+    elif prob > 0.4:
+        st.warning("Moderate performance ⚠️")
+    else:
+        st.error("Low performance risk ❌")
+
+    # =========================
+    # EXPLANATION
+    # =========================
     st.subheader("🧠 Explanation")
-    
+
     explanations = []
-    
+
     if attendance < 60:
-        explanations.append("Low attendance may reduce performance")
-    
+        explanations.append("Low attendance may affect performance")
+
     if study < 10:
         explanations.append("Insufficient study hours")
-    
+
     if prev < 50:
         explanations.append("Weak previous academic record")
-    
-    # ✅ If no issues → positive message
-    if not explanations:
-        explanations.append("Strong academic profile — high chance of success")
-    
-    for exp in explanations:
-        st.write(f"• {exp}")
 
-    # Download
+    if not explanations:
+        explanations.append("Strong academic profile")
+
+    for e in explanations:
+        st.write(f"• {e}")
+
+    # =========================
+    # DOWNLOAD
+    # =========================
     df = pd.DataFrame({
         "Attendance": [attendance],
-        "Study": [study],
-        "Previous": [prev],
+        "Study Hours": [study],
+        "Previous Score": [prev],
         "Model": [model_choice],
         "Probability": [prob]
     })
 
-    st.download_button("Download Result", df.to_csv(index=False), "result.csv")
+    st.download_button("📥 Download Result", df.to_csv(index=False), "result.csv")
 
 
 if __name__ == "__main__":
