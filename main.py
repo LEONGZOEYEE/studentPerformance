@@ -6,7 +6,7 @@ import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score, roc_curve, auc
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
@@ -74,12 +74,31 @@ def train_models(X_train, y_train):
 # -------------------------
 def evaluate_models(models, X_test, y_test):
     results = {}
+    
     for name, model in models.items():
         y_pred = model.predict(X_test)
-        acc = accuracy_score(y_test, y_pred)
-        results[name] = (acc, y_pred)
-    return results
+        y_prob = model.predict_proba(X_test)[:, 1]
 
+        acc = accuracy_score(y_test, y_pred)
+        prec = precision_score(y_test, y_pred)
+        rec = recall_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+
+        fpr, tpr, _ = roc_curve(y_test, y_prob)
+        roc_auc = auc(fpr, tpr)
+
+        results[name] = {
+            "accuracy": acc,
+            "precision": prec,
+            "recall": rec,
+            "f1": f1,
+            "fpr": fpr,
+            "tpr": tpr,
+            "auc": roc_auc,
+            "y_pred": y_pred
+        }
+
+    return results
 
 # -------------------------
 # Attendance vs Performance Graph
@@ -118,6 +137,28 @@ def plot_confusion_matrix(y_true, y_pred, model_name):
     st.pyplot(plt.gcf())
     plt.clf()
 
+# -------------------------
+# Plot Rov Curve
+# -------------------------
+def plot_roc_curve(results):
+    plt.figure()
+
+    for model_name in results:
+        plt.plot(
+            results[model_name]["fpr"],
+            results[model_name]["tpr"],
+            label=f"{model_name} (AUC = {results[model_name]['auc']:.2f})"
+        )
+
+    plt.plot([0, 1], [0, 1], linestyle='--')
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve Comparison")
+    plt.legend()
+
+    st.pyplot(plt.gcf())
+    plt.clf()
+
 
 # -------------------------
 # Streamlit UI
@@ -145,20 +186,24 @@ def main():
     # -------------------------
     # Model Comparison
     # -------------------------
-    st.subheader("📊 Model Comparison & Confusion Matrices")
-
+    st.subheader("📊 Model Evaluation Metrics")
+    
     results = evaluate_models(models, X_test, y_test)
-
-    tabs = st.tabs(["SVM", "KNN", "ANN"])
-    for i, model_name in enumerate(["SVM", "KNN", "ANN"]):
-        with tabs[i]:
-            acc, y_pred = results[model_name]
-            st.metric("Accuracy", f"{round(acc * 100, 2)}%")
-            plot_confusion_matrix(y_test, y_pred, model_name)
-
-    # Best model
-    best_model = max(results, key=lambda x: results[x][0])
-    st.success(f"🏆 Best Model: {best_model}")
+    
+    for model_name in results:
+        st.markdown(f"### {model_name}")
+        
+        st.write(f"Accuracy: {results[model_name]['accuracy']:.2f}")
+        st.write(f"Precision: {results[model_name]['precision']:.2f}")
+        st.write(f"Recall: {results[model_name]['recall']:.2f}")
+        st.write(f"F1 Score: {results[model_name]['f1']:.2f}")
+        st.write(f"AUC: {results[model_name]['auc']:.2f}")
+    
+        plot_confusion_matrix(y_test, results[model_name]["y_pred"], model_name)
+    
+    # ROC Curve
+    st.subheader("📈 ROC Curve")
+    plot_roc_curve(results)
 
     # -------------------------
     # Attendance Impact
