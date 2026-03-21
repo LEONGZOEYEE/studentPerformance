@@ -140,12 +140,10 @@ def main():
         with tabs[i]:
             res = results[name]
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4, col5 = st.columns(5)
             col1.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
             col2.metric("Precision", f"{res['precision']:.2f}")
             col3.metric("Recall", f"{res['recall']:.2f}")
-
-            col4, col5 = st.columns(2)
             col4.metric("F1 Score", f"{res['f1']:.2f}")
             col5.metric("AUC", f"{res['auc']:.2f}")
 
@@ -157,11 +155,11 @@ def main():
     # =========================
     # SIDEBAR INPUT
     # =========================
-    st.sidebar.header("🔧 Input Parameters")
+    st.subheader("🔧 Input Parameters")
 
-    attendance = st.sidebar.slider("Attendance (%)", 0, 100, 75)
-    study = st.sidebar.slider("Study Hours", 0, 30, 10)
-    prev = st.sidebar.slider("Previous Score", 0, 100, 60)
+    attendance = st.slider("Attendance (%)", 0, 100, 75)
+    study = st.slider("Study Hours", 0, 30, 10)
+    prev = st.slider("Previous Score", 0, 100, 60)
 
     model_choice = st.sidebar.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
 
