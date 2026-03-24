@@ -210,47 +210,43 @@ def main():
         st.metric("Probability of High Marks", f"{prob*100:.2f}%")
         st.progress(float(prob))
     
-        # Feedback
-        if prob > 0.7:
-            st.success("High chance of success 🎉")
-        elif prob > 0.4:
-            st.warning("Moderate performance ⚠️")
-        else:
-            st.error("Low performance risk ❌")
-    
-        # =========================
-        # EXPLANATION (dynamic)
-        # =========================
-        st.subheader("🧠 Explanation")
-    
-        averages = raw_data[raw_data['High_Score']==1][['Attendance','Hours_Studied','Previous_Scores']].mean()
-        input_vals = {
-            "Attendance": attendance,
-            "Hours_Studied": study,
-            "Previous_Scores": prev
-        }
-    
-        explanations = []
-        for f in input_vals:
-            if input_vals[f] >= averages[f]:
-                explanations.append(f"{f} ({input_vals[f]}) is above average ({averages[f]:.1f}) ✅")
-            else:
-                explanations.append(f"{f} ({input_vals[f]}) is below average ({averages[f]:.1f}) ⚠️")
-    
-        for line in explanations:
-            st.write("•", line)
-    
-        plot_input_vs_average(input_vals, averages)
-    
-        # Download
-        df = pd.DataFrame({
-            "Attendance": [attendance],
-            "Study Hours": [study],
-            "Previous Score": [prev],
-            "Model": [model_choice],
-            "Probability": [prob]
-        })
-    
+        # Feedback  
+        if prob > 0.7:  
+            st.success("High chance of success 🎉")  
+        elif prob > 0.4:  
+            st.warning("Moderate performance ⚠️")  
+        else:  
+            st.error("Low performance risk ❌")  
+        
+        # =========================  
+        # EXPLANATION (dynamic)  
+        # =========================  
+        st.subheader("🧠 Explanation")  
+        averages = raw_data[raw_data['High_Score']==1][['Attendance','Hours_Studied','Previous_Scores']].mean()  
+        input_vals = {"Attendance": attendance, "Hours_Studied": study, "Previous_Scores": prev}  
+        
+        explanations = []  
+        for f in input_vals:  
+            if input_vals[f] >= averages[f]:  
+                explanations.append(f"{f} ({input_vals[f]}) is above average of successful students ({averages[f]:.1f}) ✅")  
+            else:  
+                explanations.append(f"{f} ({input_vals[f]}) is below average of successful students ({averages[f]:.1f}) ⚠️")  
+        for line in explanations:  
+            st.write("•", line)  
+        
+        plot_input_vs_average(input_vals, averages)  
+        
+        # =========================  
+        # DOWNLOAD  
+        # =========================  
+        df = pd.DataFrame({  
+            "Attendance": [attendance],  
+            "Study Hours": [study],  
+            "Previous Score": [prev],  
+            "Model": [model_choice],  
+            "Probability": [prob]  
+        })  
+        
         st.download_button("📥 Download Result", df.to_csv(index=False), "result.csv")
 
 if __name__ == "__main__":
