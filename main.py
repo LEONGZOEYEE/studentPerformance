@@ -178,65 +178,80 @@ def main():
     # SUBHEADER INPUT
     # =========================
     st.subheader("🔧 Input Parameters")
-
-    attendance = st.slider("Attendance (%)", 0, 100, 75)
-    study = st.slider("Study Hours", 0, 30, 10)
-    prev = st.slider("Previous Score", 0, 100, 60)
-
-    model_choice = st.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
+    
+    with st.form("prediction_form"):
+        attendance = st.slider("Attendance (%)", 0, 100, 75)
+        study = st.slider("Study Hours", 0, 30, 10)
+        prev = st.slider("Previous Score", 0, 100, 60)
+    
+        model_choice = st.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
+    
+        submit = st.form_submit_button("🚀 Predict")
+    
+    if submit:
+        sample = scaler.transform([[attendance, study, prev]])
+        prob = models[model_choice].predict_proba(sample)[0][1]
+    
+        st.metric("Probability of High Marks", f"{prob*100:.2f}%")
+        st.progress(float(prob))
 
     # =========================
     # PREDICTION
     # =========================
     st.subheader("🔍 Prediction Result")
     st.divider()
-
-    sample = scaler.transform([[attendance, study, prev]])
-
-    prob = models[model_choice].predict_proba(sample)[0][1]
-
-    st.metric("Probability of High Marks", f"{prob*100:.2f}%")
-    st.progress(float(prob))
-
-    # Feedback
-    if prob > 0.7:
-        st.success("High chance of success 🎉")
-    elif prob > 0.4:
-        st.warning("Moderate performance ⚠️")
-    else:
-        st.error("Low performance risk ❌")
-
-    # =========================
-    # EXPLANATION (dynamic)
-    # =========================
-    st.subheader("🧠 Explanation")
-    averages = raw_data[raw_data['High_Score']==1][['Attendance','Hours_Studied','Previous_Scores']].mean()
-    input_vals = {"Attendance": attendance, "Hours_Studied": study, "Previous_Scores": prev}
-
-    explanations = []
-    for f in input_vals:
-        if input_vals[f] >= averages[f]:
-            explanations.append(f"{f} ({input_vals[f]}) is above average of successful students ({averages[f]:.1f}) ✅")
+    
+    # 👉 Add button
+    if st.button("🚀 Predict Performance"):
+    
+        sample = scaler.transform([[attendance, study, prev]])
+        prob = models[model_choice].predict_proba(sample)[0][1]
+    
+        st.metric("Probability of High Marks", f"{prob*100:.2f}%")
+        st.progress(float(prob))
+    
+        # Feedback
+        if prob > 0.7:
+            st.success("High chance of success 🎉")
+        elif prob > 0.4:
+            st.warning("Moderate performance ⚠️")
         else:
-            explanations.append(f"{f} ({input_vals[f]}) is below average of successful students ({averages[f]:.1f}) ⚠️")
-    for line in explanations:
-        st.write("•", line)
-
-    plot_input_vs_average(input_vals, averages)
-
-    # =========================
-    # DOWNLOAD
-    # =========================
-    df = pd.DataFrame({
-        "Attendance": [attendance],
-        "Study Hours": [study],
-        "Previous Score": [prev],
-        "Model": [model_choice],
-        "Probability": [prob]
-    })
-
-    st.download_button("📥 Download Result", df.to_csv(index=False), "result.csv")
-
+            st.error("Low performance risk ❌")
+    
+        # =========================
+        # EXPLANATION (dynamic)
+        # =========================
+        st.subheader("🧠 Explanation")
+    
+        averages = raw_data[raw_data['High_Score']==1][['Attendance','Hours_Studied','Previous_Scores']].mean()
+        input_vals = {
+            "Attendance": attendance,
+            "Hours_Studied": study,
+            "Previous_Scores": prev
+        }
+    
+        explanations = []
+        for f in input_vals:
+            if input_vals[f] >= averages[f]:
+                explanations.append(f"{f} ({input_vals[f]}) is above average ({averages[f]:.1f}) ✅")
+            else:
+                explanations.append(f"{f} ({input_vals[f]}) is below average ({averages[f]:.1f}) ⚠️")
+    
+        for line in explanations:
+            st.write("•", line)
+    
+        plot_input_vs_average(input_vals, averages)
+    
+        # Download
+        df = pd.DataFrame({
+            "Attendance": [attendance],
+            "Study Hours": [study],
+            "Previous Score": [prev],
+            "Model": [model_choice],
+            "Probability": [prob]
+        })
+    
+        st.download_button("📥 Download Result", df.to_csv(index=False), "result.csv")
 
 if __name__ == "__main__":
     main()
