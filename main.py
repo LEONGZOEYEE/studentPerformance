@@ -172,6 +172,9 @@ def main():
             else:
                 col5.metric("AUC (OvR)", "N/A")
 
+            st.subheader("Confusion Matrix")
+            plot_confusion_matrix(y_test, res["y_pred"], name)
+
     # =========================
     # INPUT
     # =========================
