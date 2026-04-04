@@ -6,7 +6,10 @@ import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.metrics import (
+    accuracy_score, precision_score, recall_score,
+    f1_score, confusion_matrix, roc_auc_score
+)
 
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
@@ -36,11 +39,9 @@ def load_data(file_path):
 
     data["Grade"] = data["Exam_Score"].apply(get_grade)
 
-    # Encode target labels
     le = LabelEncoder()
     data["Grade"] = le.fit_transform(data["Grade"])
 
-    # Keep only important features
     data = data[['Attendance', 'Hours_Studied', 'Previous_Scores', 'Grade']]
 
     X = data.drop('Grade', axis=1)
@@ -68,7 +69,7 @@ def train_models(X_train, y_train):
 
     models["KNN"] = KNeighborsClassifier(
         n_neighbors=7,
-        weights="distance"   # FIXED: smoother probabilities
+        weights="distance"
     ).fit(X_train, y_train)
 
     models["ANN"] = MLPClassifier(
@@ -90,11 +91,20 @@ def evaluate_models(models, X_test, y_test):
     for name, model in models.items():
         y_pred = model.predict(X_test)
 
+        # AUC SAFE (multiclass)
+        auc = None
+        if hasattr(model, "predict_proba"):
+            try:
+                auc = roc_auc_score(y_test, model.predict_proba(X_test), multi_class="ovr")
+            except:
+                auc = None
+
         results[name] = {
             "accuracy": accuracy_score(y_test, y_pred),
             "precision": precision_score(y_test, y_pred, average="weighted"),
             "recall": recall_score(y_test, y_pred, average="weighted"),
             "f1": f1_score(y_test, y_pred, average="weighted"),
+            "auc": auc,
             "y_pred": y_pred
         }
 
@@ -125,19 +135,17 @@ def main():
     st.set_page_config(layout="wide")
 
     st.title("🎓 Student Grade Prediction System")
-    st.caption("Predict final grade based on performance factors")
+    st.caption("Predict final academic grade using ML models")
 
     file_path = "StudentPerformanceFactors.csv"
 
     X_train, X_test, y_train, y_test, scaler, raw_data, le = load_data(file_path)
 
-    with st.spinner("Training models..."):
-        models = train_models(X_train, y_train)
-
+    models = train_models(X_train, y_train)
     results = evaluate_models(models, X_test, y_test)
 
     # =========================
-    # MODEL COMPARISON (TABS UI)
+    # MODEL COMPARISON
     # =========================
     st.subheader("📊 Model Comparison")
     st.divider()
@@ -147,9 +155,7 @@ def main():
 
     tabs = st.tabs(["SVM", "KNN", "ANN"])
 
-    model_names = ["SVM", "KNN", "ANN"]
-
-    for i, name in enumerate(model_names):
+    for i, name in enumerate(["SVM", "KNN", "ANN"]):
         with tabs[i]:
             res = results[name]
 
@@ -159,19 +165,14 @@ def main():
             col3.metric("Recall", f"{res['recall']:.2f}")
             col4.metric("F1 Score", f"{res['f1']:.2f}")
 
-            st.subheader("📊 Confusion Matrix")
+            if res["auc"]:
+                st.metric("AUC (OvR)", f"{res['auc']:.2f}")
+
+            st.subheader("Confusion Matrix")
             plot_confusion_matrix(y_test, res["y_pred"], name)
 
-            # MODEL INSIGHT
-            if name == "KNN":
-                st.warning("KNN uses nearest neighbors → probabilities can look unstable")
-            elif name == "SVM":
-                st.info("SVM is margin-based → stable and reliable predictions")
-            else:
-                st.success("ANN learns deep patterns → best for complex relationships")
-
     # =========================
-    # INPUT SECTION
+    # INPUT
     # =========================
     st.subheader("🔧 Predict Student Grade")
 
@@ -180,43 +181,29 @@ def main():
         study = st.slider("Study Hours", 0, 30, 10)
         prev = st.slider("Previous Score", 0, 100, 60)
 
-        model_choice = st.selectbox("Choose Model", model_names)
-
+        model_choice = st.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
         submit = st.form_submit_button("🚀 Predict")
 
     if submit:
         sample = scaler.transform([[attendance, study, prev]])
-
         model = models[model_choice]
 
         pred_class = model.predict(sample)[0]
         grade = le.inverse_transform([pred_class])[0]
 
-        # probability handling (safe fix)
-        if hasattr(model, "predict_proba"):
-            prob = np.max(model.predict_proba(sample))
-        else:
-            prob = 1.0
+        prob = np.max(model.predict_proba(sample)) if hasattr(model, "predict_proba") else 1.0
 
         st.success(f"🎓 Predicted Grade: {grade}")
         st.progress(float(prob))
 
-        # Feedback
-        if grade in ["A+", "A", "A-"]:
-            st.success("Excellent performance 🎉")
-        elif grade in ["B+", "B", "B-"]:
-            st.info("Good performance 👍")
-        elif grade in ["C+", "C"]:
-            st.warning("Average performance ⚠️")
-        else:
-            st.error("Needs improvement ❌")
-
         # =========================
-        # EXPLANATION
+        # FIXED EXPLANATION (IMPORTANT)
         # =========================
         st.subheader("🧠 Performance Insight")
 
-        avg = raw_data.groupby("Grade").mean().mean()
+        high_students = raw_data[raw_data["Grade"] >= raw_data["Grade"].quantile(0.75)]
+
+        avg = high_students[["Attendance", "Hours_Studied", "Previous_Scores"]].mean()
 
         input_vals = {
             "Attendance": attendance,
@@ -226,9 +213,9 @@ def main():
 
         for k in input_vals:
             if input_vals[k] >= avg[k]:
-                st.write(f"✔ {k}: above average of successful students")
+                st.write(f"✔ {k}: above strong students average")
             else:
-                st.write(f"⚠ {k}: below average of successful students")
+                st.write(f"⚠ {k}: below strong students average")
 
         # =========================
         # DOWNLOAD
@@ -241,11 +228,7 @@ def main():
             "Predicted Grade": [grade]
         })
 
-        st.download_button(
-            "📥 Download Result",
-            df.to_csv(index=False),
-            "grade_prediction.csv"
-        )
+        st.download_button("📥 Download Result", df.to_csv(index=False), "grade_prediction.csv")
 
 
 if __name__ == "__main__":
