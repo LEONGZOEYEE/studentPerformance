@@ -159,17 +159,18 @@ def main():
         with tabs[i]:
             res = results[name]
 
-            col1, col2, col3, col4 = st.columns(4)
+            col1, col2, col3, col4, col5 = st.columns(5)
+
             col1.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
             col2.metric("Precision", f"{res['precision']:.2f}")
             col3.metric("Recall", f"{res['recall']:.2f}")
             col4.metric("F1 Score", f"{res['f1']:.2f}")
-
-            if res["auc"]:
-                st.metric("AUC (OvR)", f"{res['auc']:.2f}")
-
-            st.subheader("Confusion Matrix")
-            plot_confusion_matrix(y_test, res["y_pred"], name)
+            
+            # AUC (safe check)
+            if res.get("auc") is not None:
+                col5.metric("AUC (OvR)", f"{res['auc']:.2f}")
+            else:
+                col5.metric("AUC (OvR)", "N/A")
 
     # =========================
     # INPUT
