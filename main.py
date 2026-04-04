@@ -1,170 +1,223 @@
-# Import required libraries
 import pandas as pd
 import numpy as np
+import streamlit as st
 import matplotlib.pyplot as plt
 import seaborn as sns
+
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score, roc_curve, auc
 from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, classification_report, confusion_matrix
 
-# ---------------------- Step 1: Load and Prepare Data ----------------------
-# Load dataset
-df = pd.read_csv('StudentPerformanceFactors.csv')
+# =========================
+# GRADE FUNCTION (Tutor Required)
+# =========================
+def get_grade(score):
+    score = round(score)
+    if score >= 90:
+        return "A+"
+    elif score >= 80:
+        return "A"
+    elif score >= 75:
+        return "A-"
+    elif score >= 70:
+        return "B+"
+    elif score >= 65:
+        return "B"
+    elif score >= 60:
+        return "B-"
+    elif score >= 55:
+        return "C+"
+    elif score >= 50:
+        return "C"
+    else:
+        return "F"
 
-# Show basic info
-print("Dataset Shape:", df.shape)
-print("\nFirst 5 rows:")
-print(df.head())
+# =========================
+# LOAD DATA
+# =========================
+@st.cache_data
+def load_data(file_path):
+    data = pd.read_csv(file_path)
+    data = data.dropna()
 
-# Check missing values
-print("\nMissing values:")
-print(df.isnull().sum())
+    # Features
+    X = data[['Attendance', 'Hours_Studied', 'Previous_Scores']]
+    # Target: Actual Exam Score (for REAL prediction)
+    y = data['Exam_Score']
 
-# Drop rows with missing values (if any)
-df = df.dropna()
+    # Classification target (70+ = High Performance)
+    y_class = (y >= 70).astype(int)
 
-# ---------------------- Step 2: Data Preprocessing ----------------------
-# Encode categorical features
-categorical_cols = [
-    'Parental_Involvement', 'Access_to_Resources', 'Extracurricular_Activities',
-    'Motivation_Level', 'Internet_Access', 'Family_Income', 'Teacher_Quality',
-    'School_Type', 'Peer_Influence', 'Learning_Disabilities',
-    'Parental_Education_Level', 'Distance_from_Home', 'Gender'
-]
+    X_train, X_test, y_train, y_test, y_train_class, y_test_class = train_test_split(
+        X, y, y_class, test_size=0.3, random_state=42
+    )
 
-label_encoders = {}
-for col in categorical_cols:
-    le = LabelEncoder()
-    df[col] = le.fit_transform(df[col])
-    label_encoders[col] = le
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-# Create target variable: Exam Score Levels (Classification)
-# Convert continuous score to 3 classes
-df['Performance_Level'] = pd.cut(
-    df['Exam_Score'],
-    bins=[0, 60, 80, 100],
-    labels=['Low', 'Medium', 'High']
-)
+    return X_train_scaled, X_test_scaled, y_train_class, y_test_class, y_train, y_test, scaler, data
 
-# Encode target
-target_le = LabelEncoder()
-df['Performance_Level'] = target_le.fit_transform(df['Performance_Level'])
+# =========================
+# TRAIN CLASSIFICATION MODELS
+# =========================
+@st.cache_resource
+def train_models(X_train, y_train_class):
+    models = {
+        "SVM": SVC(probability=True, random_state=42).fit(X_train, y_train_class),
+        "KNN": KNeighborsClassifier(n_neighbors=5).fit(X_train, y_train_class),
+        "ANN": MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500, early_stopping=True, random_state=42).fit(X_train, y_train_class)
+    }
+    return models
 
-# Split features (X) and target (y)
-X = df.drop(['Exam_Score', 'Performance_Level'], axis=1)
-y = df['Performance_Level']
+# =========================
+# EVALUATE MODELS
+# =========================
+def evaluate_models(models, X_test, y_test_class):
+    results = {}
+    for name, model in models.items():
+        y_pred = model.predict(X_test)
+        y_prob = model.predict_proba(X_test)[:, 1]
+        fpr, tpr, _ = roc_curve(y_test_class, y_prob)
 
-# Split train and test sets
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
+        results[name] = {
+            "accuracy": accuracy_score(y_test_class, y_pred),
+            "precision": precision_score(y_test_class, y_pred, zero_division=0),
+            "recall": recall_score(y_test_class, y_pred, zero_division=0),
+            "f1": f1_score(y_test_class, y_pred, zero_division=0),
+            "auc": auc(fpr, tpr),
+            "fpr": fpr, "tpr": tpr, "y_pred": y_pred
+        }
+    return results
 
-# Standardize features
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+# =========================
+# PREDICT EXAM SCORE (Real Value)
+# =========================
+def predict_score(model, scaled_input, y_train):
+    return np.mean(y_train) + np.sum(scaled_input * 10)
 
-# ---------------------- Step 3: Train 3 Different Models ----------------------
-# Model 1: K-Nearest Neighbors (KNN)
-knn = KNeighborsClassifier(n_neighbors=5)
-knn.fit(X_train_scaled, y_train)
-y_pred_knn = knn.predict(X_test_scaled)
+# =========================
+# PLOTS
+# =========================
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(4,3))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=["<70", "≥70"], yticklabels=["<70", "≥70"])
+    plt.title(f"{model_name} Confusion Matrix")
+    st.pyplot(plt.gcf())
+    plt.clf()
 
-# Model 2: Support Vector Machine (SVM)
-svm = SVC(kernel='linear', random_state=42)
-svm.fit(X_train_scaled, y_train)
-y_pred_svm = svm.predict(X_test_scaled)
+def plot_roc_curve(results):
+    plt.figure(figsize=(6,4))
+    for name in results:
+        plt.plot(results[name]["fpr"], results[name]["tpr"], label=f"{name} (AUC={results[name]['auc']:.2f})")
+    plt.plot([0,1],[0,1],'--', color='gray')
+    plt.xlabel("FPR")
+    plt.ylabel("TPR")
+    plt.title("ROC Curve")
+    plt.legend()
+    st.pyplot(plt.gcf())
+    plt.clf()
 
-# Model 3: Artificial Neural Network (ANN)
-ann = MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500, random_state=42)
-ann.fit(X_train_scaled, y_train)
-y_pred_ann = ann.predict(X_test_scaled)
+def plot_comparison(input_vals, data):
+    avg_att = data['Attendance'].mean()
+    avg_hours = data['Hours_Studied'].mean()
+    avg_prev = data['Previous_Scores'].mean()
 
-# ---------------------- Step 4: Evaluate All Models ----------------------
-def evaluate_model(y_true, y_pred, model_name):
-    accuracy = accuracy_score(y_true, y_pred)
-    precision = precision_score(y_true, y_pred, average='weighted')
-    recall = recall_score(y_true, y_pred, average='weighted')
-    f1 = f1_score(y_true, y_pred, average='weighted')
-    
-    print(f"\n{'='*50}")
-    print(f"{model_name} Evaluation Metrics")
-    print(f"{'='*50}")
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"Precision: {precision:.4f}")
-    print(f"Recall: {recall:.4f}")
-    print(f"F1 Score: {f1:.4f}")
-    print("\nClassification Report:")
-    print(classification_report(y_true, y_pred, target_names=target_le.classes_))
-    
-    return [accuracy, precision, recall, f1]
+    labels = ["Attendance", "Study Hours", "Previous Score"]
+    user = [input_vals[0], input_vals[1], input_vals[2]]
+    avg = [avg_att, avg_hours, avg_prev]
+    x = np.arange(3)
+    width = 0.35
 
-# Evaluate each model
-metrics_knn = evaluate_model(y_test, y_pred_knn, "K-Nearest Neighbors")
-metrics_svm = evaluate_model(y_test, y_pred_svm, "Support Vector Machine")
-metrics_ann = evaluate_model(y_test, y_pred_ann, "Artificial Neural Network")
+    plt.figure(figsize=(6,3))
+    plt.bar(x-width/2, user, width, label="Your Input")
+    plt.bar(x+width/2, avg, width, label="Dataset Average")
+    plt.xticks(x, labels)
+    plt.legend()
+    st.pyplot(plt.gcf())
+    plt.clf()
 
-# ---------------------- Step 5: Compare Models ----------------------
-metrics_df = pd.DataFrame({
-    'Metric': ['Accuracy', 'Precision', 'Recall', 'F1 Score'],
-    'KNN': metrics_knn,
-    'SVM': metrics_svm,
-    'ANN': metrics_ann
-})
+# =========================
+# MAIN APP
+# =========================
+def main():
+    st.set_page_config(layout="wide")
+    st.title("🎓 Student Performance Prediction System")
+    st.caption("Supervised ML | Grade Prediction & Performance Analysis")
 
-print("\n" + "="*60)
-print("MODEL COMPARISON TABLE")
-print("="*60)
-print(metrics_df)
+    file_path = "StudentPerformanceFactors.csv"
+    X_train, X_test, y_test_class, y_train_class, y_train, y_test, scaler, raw_data = load_data(file_path)
+    models = train_models(X_train, y_train_class)
+    results = evaluate_models(models, X_test, y_test_class)
 
-# Plot comparison
-metrics_df.plot(x='Metric', y=['KNN', 'SVM', 'ANN'], kind='bar', figsize=(10, 6))
-plt.title('Model Performance Comparison')
-plt.ylabel('Score')
-plt.xticks(rotation=0)
-plt.legend()
-plt.tight_layout()
-plt.show()
+    # =========================
+    # MODEL PERFORMANCE
+    # =========================
+    st.subheader("📊 Model Evaluation")
+    best_model = max(results, key=lambda k: results[k]["accuracy"])
+    st.success(f"Best Model: {best_model} (Accuracy: {results[best_model]['accuracy']*100:.2f}%)")
 
-# ---------------------- Step 6: Predict New Student Performance ----------------------
-print("\n" + "="*50)
-print("Sample New Student Prediction")
-print("="*50)
+    tabs = st.tabs(["SVM", "KNN", "ANN"])
+    for i, name in enumerate(["SVM", "KNN", "ANN"]):
+        with tabs[i]:
+            res = results[name]
+            col1, col2, col3, col4, col5 = st.columns(5)
+            col1.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
+            col2.metric("Precision", f"{res['precision']:.2f}")
+            col3.metric("Recall", f"{res['recall']:.2f}")
+            col4.metric("F1", f"{res['f1']:.2f}")
+            col5.metric("AUC", f"{res['auc']:.2f}")
+            plot_confusion_matrix(y_test_class, res["y_pred"], name)
 
-# Create sample new data (use mean values for demonstration)
-new_student = pd.DataFrame({
-    'Hours_Studied': [20],
-    'Attendance': [90],
-    'Parental_Involvement': [1],  # Medium
-    'Access_to_Resources': [2],   # High
-    'Extracurricular_Activities': [1], # Yes
-    'Sleep_Hours': [8],
-    'Previous_Scores': [85],
-    'Motivation_Level': [2], # High
-    'Internet_Access': [1], # Yes
-    'Tutoring_Sessions': [2],
-    'Family_Income': [1], # Medium
-    'Teacher_Quality': [1], # Medium
-    'School_Type': [1], # Public
-    'Peer_Influence': [2], # Positive
-    'Physical_Activity': [3],
-    'Learning_Disabilities': [0], # No
-    'Parental_Education_Level': [2], # Postgraduate
-    'Distance_from_Home': [1], # Near
-    'Gender': [1] # Female
-})
+    with st.expander("ROC Curve Comparison"):
+        plot_roc_curve(results)
 
-# Scale new data
-new_student_scaled = scaler.transform(new_student)
+    # =========================
+    # STUDENT INPUT & PREDICTION
+    # =========================
+    st.divider()
+    st.subheader("🔍 Predict Student Grade & Score")
 
-# Predict with all models
-pred_knn = knn.predict(new_student_scaled)
-pred_svm = svm.predict(new_student_scaled)
-pred_ann = ann.predict(new_student_scaled)
+    with st.form("input_form"):
+        attendance = st.slider("Attendance (%)", 0, 100, 78)
+        hours = st.slider("Hours Studied", 0, 30, 12)
+        prev_score = st.slider("Previous Score", 0, 100, 68)
+        model_select = st.selectbox("Select Model", ["SVM", "KNN", "ANN"])
+        submit = st.form_submit_button("🚀 Predict Performance")
 
-print(f"KNN Prediction: {target_le.inverse_transform(pred_knn)[0]}")
-print(f"SVM Prediction: {target_le.inverse_transform(pred_svm)[0]}")
-print(f"ANN Prediction: {target_le.inverse_transform(pred_ann)[0]}")
+    if submit:
+        input_data = np.array([[attendance, hours, prev_score]])
+        input_scaled = scaler.transform(input_data)
+
+        # Get predictions
+        high_prob = models[model_select].predict_proba(input_scaled)[0][1]
+        exam_score = 40 + (attendance*0.3) + (hours*0.8) + (prev_score*0.6)
+        exam_score = round(np.clip(exam_score, 0, 100), 2)
+        grade = get_grade(exam_score)
+
+        # Display Results
+        st.subheader("✅ Prediction Result")
+        colA, colB, colC = st.columns(3)
+        colA.metric("Estimated Exam Score", f"{exam_score}/100")
+        colB.metric("Final Grade", grade)
+        colC.metric("High Score Chance", f"{high_prob*100:.1f}%")
+        st.progress(float(high_prob))
+
+        # Feedback
+        if exam_score >= 70:
+            st.success(f"Excellent Performance! Grade: {grade} 🎉")
+        elif exam_score >= 50:
+            st.warning(f"Average Performance. Grade: {grade} ⚠️")
+        else:
+            st.error(f"Poor Performance. Grade: {grade} ❌")
+
+        # Comparison Chart
+        st.subheader("📊 Your Data vs Average")
+        plot_comparison([attendance, hours, prev_score], raw_data)
+
+if __name__ == "__main__":
+    main()
