@@ -7,12 +7,13 @@ import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
-    mean_absolute_error, mean_squared_error, r2_score
+    accuracy_score, precision_score, recall_score,
+    f1_score, confusion_matrix, roc_auc_score
 )
 
-from sklearn.svm import SVR
-from sklearn.neighbors import KNeighborsRegressor
-from sklearn.neural_network import MLPRegressor
+from sklearn.svm import SVC
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 
 
 # =========================
@@ -30,6 +31,22 @@ def get_grade(score):
     else: return "F"
 
 
+# 🔥 CORRECT ORDER (IMPORTANT)
+grade_map = {
+    "F": 0,
+    "C": 1,
+    "C+": 2,
+    "B-": 3,
+    "B": 4,
+    "B+": 5,
+    "A-": 6,
+    "A": 7,
+    "A+": 8
+}
+
+reverse_grade = {v: k for k, v in grade_map.items()}
+
+
 # =========================
 # LOAD DATA
 # =========================
@@ -37,12 +54,17 @@ def get_grade(score):
 def load_data(file_path):
     data = pd.read_csv(file_path)
 
-    # Features & target
+    # Create grade
+    data["Grade"] = data["Exam_Score"].apply(get_grade)
+
+    # 🔥 FIX: use manual mapping (NOT LabelEncoder)
+    data["Grade"] = data["Grade"].map(grade_map)
+
     X = data[['Attendance', 'Hours_Studied', 'Previous_Scores']]
-    y = data['Exam_Score']   # 🔥 IMPORTANT: regression target
+    y = data['Grade']
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.2, random_state=42, stratify=y
     )
 
     scaler = StandardScaler()
@@ -59,14 +81,21 @@ def load_data(file_path):
 def train_models(X_train, y_train):
     models = {}
 
-    models["SVM"] = SVR(kernel='rbf').fit(X_train, y_train)
+    # 🔥 FIX: class_weight balanced
+    models["SVM"] = SVC(
+        probability=True,
+        class_weight="balanced",
+        C=10,
+        gamma="scale",
+        random_state=42
+    ).fit(X_train, y_train)
 
-    models["KNN"] = KNeighborsRegressor(
-        n_neighbors=7,
+    models["KNN"] = KNeighborsClassifier(
+        n_neighbors=5,
         weights="distance"
     ).fit(X_train, y_train)
 
-    models["ANN"] = MLPRegressor(
+    models["ANN"] = MLPClassifier(
         hidden_layer_sizes=(64, 32),
         max_iter=500,
         early_stopping=True,
@@ -85,10 +114,19 @@ def evaluate_models(models, X_test, y_test):
     for name, model in models.items():
         y_pred = model.predict(X_test)
 
+        auc = None
+        if hasattr(model, "predict_proba"):
+            try:
+                auc = roc_auc_score(y_test, model.predict_proba(X_test), multi_class="ovr")
+            except:
+                pass
+
         results[name] = {
-            "mae": mean_absolute_error(y_test, y_pred),
-            "rmse": np.sqrt(mean_squared_error(y_test, y_pred)),
-            "r2": r2_score(y_test, y_pred),
+            "accuracy": accuracy_score(y_test, y_pred),
+            "precision": precision_score(y_test, y_pred, average="weighted"),
+            "recall": recall_score(y_test, y_pred, average="weighted"),
+            "f1": f1_score(y_test, y_pred, average="weighted"),
+            "auc": auc,
             "y_pred": y_pred
         }
 
@@ -96,14 +134,17 @@ def evaluate_models(models, X_test, y_test):
 
 
 # =========================
-# PLOT ACTUAL VS PREDICTED
+# CONFUSION MATRIX
 # =========================
-def plot_results(y_test, y_pred, model_name):
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    cm = confusion_matrix(y_true, y_pred)
+
     plt.figure(figsize=(6,4))
-    plt.scatter(y_test, y_pred)
-    plt.xlabel("Actual Score")
-    plt.ylabel("Predicted Score")
-    plt.title(f"{model_name} Prediction")
+    sns.heatmap(cm, annot=True, fmt="d")
+
+    plt.title(f"{model_name} Confusion Matrix")
+    plt.xlabel("Predicted")
+    plt.ylabel("Actual")
 
     st.pyplot(plt.gcf())
     plt.clf()
@@ -115,8 +156,7 @@ def plot_results(y_test, y_pred, model_name):
 def main():
     st.set_page_config(layout="wide")
 
-    st.title("🎓 Student Score & Grade Prediction System")
-    st.caption("Predict exam score using ML → convert to grade")
+    st.title("🎓 Student Grade Prediction System")
 
     file_path = "StudentPerformanceFactors.csv"
 
@@ -129,9 +169,8 @@ def main():
     # MODEL COMPARISON
     # =========================
     st.subheader("📊 Model Comparison")
-    st.divider()
 
-    best_model = max(results, key=lambda x: results[x]["r2"])
+    best_model = max(results, key=lambda x: results[x]["accuracy"])
     st.success(f"🏆 Best Model: {best_model}")
 
     tabs = st.tabs(["SVM", "KNN", "ANN"])
@@ -140,74 +179,41 @@ def main():
         with tabs[i]:
             res = results[name]
 
-            col1, col2, col3 = st.columns(3)
+            col1, col2, col3, col4, col5 = st.columns(5)
 
-            col1.metric("MAE", f"{res['mae']:.2f}")
-            col2.metric("RMSE", f"{res['rmse']:.2f}")
-            col3.metric("R² Score", f"{res['r2']:.2f}")
+            col1.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
+            col2.metric("Precision", f"{res['precision']:.2f}")
+            col3.metric("Recall", f"{res['recall']:.2f}")
+            col4.metric("F1 Score", f"{res['f1']:.2f}")
+            col5.metric("AUC", f"{res['auc']:.2f}" if res["auc"] else "N/A")
 
-            st.subheader("Actual vs Predicted")
-            plot_results(y_test, res["y_pred"], name)
+            st.subheader("Confusion Matrix")
+            plot_confusion_matrix(y_test, res["y_pred"], name)
 
     # =========================
-    # INPUT
+    # PREDICTION
     # =========================
     st.subheader("🔧 Predict Student Grade")
 
-    with st.form("prediction_form"):
-        attendance = st.slider("Attendance (%)", 0, 100, 75)
+    with st.form("form"):
+        attendance = st.slider("Attendance", 0, 100, 80)
         study = st.slider("Study Hours", 0, 30, 10)
-        prev = st.slider("Previous Score", 0, 100, 60)
+        prev = st.slider("Previous Score", 0, 100, 70)
 
-        model_choice = st.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
-        submit = st.form_submit_button("🚀 Predict")
+        model_choice = st.selectbox("Model", ["SVM", "KNN", "ANN"])
+        submit = st.form_submit_button("Predict")
 
     if submit:
         sample = scaler.transform([[attendance, study, prev]])
         model = models[model_choice]
 
-        pred_score = model.predict(sample)[0]
-        grade = get_grade(pred_score)
+        pred = model.predict(sample)[0]
+        grade = reverse_grade[pred]
 
-        st.success(f"📊 Predicted Score: {pred_score:.2f}")
+        prob = np.max(model.predict_proba(sample))
+
         st.success(f"🎓 Predicted Grade: {grade}")
-
-        # =========================
-        # PERFORMANCE INSIGHT
-        # =========================
-        st.subheader("🧠 Performance Insight")
-
-        avg = raw_data[['Attendance', 'Hours_Studied', 'Previous_Scores']].mean()
-
-        input_vals = {
-            "Attendance": attendance,
-            "Hours_Studied": study,
-            "Previous_Scores": prev
-        }
-
-        for k in input_vals:
-            if input_vals[k] >= avg[k]:
-                st.write(f"✔ {k}: above average")
-            else:
-                st.write(f"⚠ {k}: below average")
-
-        # =========================
-        # DOWNLOAD
-        # =========================
-        df = pd.DataFrame({
-            "Attendance": [attendance],
-            "Study Hours": [study],
-            "Previous Score": [prev],
-            "Model": [model_choice],
-            "Predicted Score": [pred_score],
-            "Predicted Grade": [grade]
-        })
-
-        st.download_button(
-            "📥 Download Result",
-            df.to_csv(index=False),
-            "grade_prediction.csv"
-        )
+        st.progress(float(prob))
 
 
 if __name__ == "__main__":
