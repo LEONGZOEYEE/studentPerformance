@@ -7,97 +7,86 @@ import seaborn as sns
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score, roc_curve, auc
-
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 
 # =========================
+# GRADE FUNCTION
+# =========================
+def get_grade(score):
+    if score >= 90: return "A+"
+    elif score >= 80: return "A"
+    elif score >= 75: return "A-"
+    elif score >= 70: return "B+"
+    elif score >= 65: return "B"
+    elif score >= 60: return "B-"
+    elif score >= 55: return "C+"
+    elif score >= 50: return "C"
+    else: return "F"
+
+# =========================
 # LOAD DATA
 # =========================
-def load_data():
-    df = pd.read_csv("student_performance_academic_5000.csv")
-    df.columns = df.columns.str.strip()
-    return df
+@st.cache_data
+def load_data(file_path):
+    data = pd.read_csv(file_path)
 
-# =========================
-# PREPROCESS DATA
-# =========================
-def preprocess_data(df):
-    possible_targets = ["Exam_Score", "Final_Score", "Score", "Performance"]
+    # Target
+    data['High_Score'] = data['Exam_Score'].apply(lambda x: 1 if x >= 70 else 0)
 
-    target_column = None
-    for col in df.columns:
-        if col in possible_targets:
-            target_column = col
-            break
+    # 🔥 Use ONLY 3 features (SAFE + MATCH INPUT)
+    data = data[['Attendance','Hours_Studied','Previous_Scores','High_Score']]
 
-    if target_column is None:
-        target_column = df.columns[-1]
+    X = data.drop('High_Score', axis=1)
+    y = data['High_Score']
 
-    if df[target_column].dtype != "object":
-        threshold = df[target_column].median()
-        df["Target"] = (df[target_column] >= threshold).astype(int)
-    else:
-        df["Target"] = df[target_column].astype("category").cat.codes
-
-    numeric_df = df.select_dtypes(include=[np.number])
-
-    X = numeric_df.drop(columns=["Target"])
-    y = numeric_df["Target"]
-
-    return X, y
-
-# =========================
-# SPLIT + SCALE
-# =========================
-def split_and_scale(X, y):
+    # ✅ 70/30 split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42, stratify=y
+        X, y, test_size=0.3, random_state=42
     )
 
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    return X_train, X_test, y_train, y_test, scaler
+    return X_train, X_test, y_train, y_test, scaler, data
 
 # =========================
 # TRAIN MODELS
 # =========================
+@st.cache_resource
 def train_models(X_train, y_train):
-    models = {
-        "SVM": SVC(probability=True),
-        "KNN": KNeighborsClassifier(n_neighbors=5),
-        "ANN": MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500)
-    }
+    models = {}
 
-    for model in models.values():
-        model.fit(X_train, y_train)
+    models['SVM'] = SVC(probability=True, random_state=42).fit(X_train, y_train)
+    models['KNN'] = KNeighborsClassifier(n_neighbors=5).fit(X_train, y_train)
+    models['ANN'] = MLPClassifier(
+        hidden_layer_sizes=(64, 32),
+        max_iter=500,
+        early_stopping=True,
+        random_state=42
+    ).fit(X_train, y_train)
 
     return models
 
 # =========================
-# EVALUATION
+# EVALUATE
 # =========================
-def evaluate(models, X_test, y_test):
+def evaluate_models(models, X_test, y_test):
     results = {}
 
     for name, model in models.items():
         y_pred = model.predict(X_test)
-
-        if hasattr(model, "predict_proba"):
-            y_prob = model.predict_proba(X_test)[:, 1]
-        else:
-            y_prob = y_pred
+        y_prob = model.predict_proba(X_test)[:, 1]
 
         fpr, tpr, _ = roc_curve(y_test, y_prob)
 
         results[name] = {
             "accuracy": accuracy_score(y_test, y_pred),
-            "precision": precision_score(y_test, y_pred, zero_division=0),
-            "recall": recall_score(y_test, y_pred, zero_division=0),
-            "f1": f1_score(y_test, y_pred, zero_division=0),
+            "precision": precision_score(y_test, y_pred),
+            "recall": recall_score(y_test, y_pred),
+            "f1": f1_score(y_test, y_pred),
             "auc": auc(fpr, tpr),
             "fpr": fpr,
             "tpr": tpr,
@@ -109,86 +98,128 @@ def evaluate(models, X_test, y_test):
 # =========================
 # PLOTS
 # =========================
-def plot_cm(y_test, y_pred, name):
-    cm = confusion_matrix(y_test, y_pred)
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure()
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+                xticklabels=["Low","High"],
+                yticklabels=["Low","High"])
+    plt.title(f"{model_name} Confusion Matrix")
+    st.pyplot(plt.gcf())
+    plt.clf()
 
-    fig, ax = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax)
-    ax.set_title(f"{name} Confusion Matrix")
-    st.pyplot(fig)
-
-def plot_roc(results):
-    fig, ax = plt.subplots()
-
+def plot_roc_curve(results):
+    plt.figure()
     for name in results:
-        ax.plot(results[name]["fpr"], results[name]["tpr"],
-                label=f"{name} (AUC={results[name]['auc']:.2f})")
+        plt.plot(results[name]["fpr"], results[name]["tpr"],
+                 label=f"{name} (AUC={results[name]['auc']:.2f})")
+    plt.plot([0,1],[0,1],'--')
+    plt.legend()
+    plt.title("ROC Curve Comparison")
+    st.pyplot(plt.gcf())
+    plt.clf()
 
-    ax.plot([0, 1], [0, 1], "--")
-    ax.legend()
-    ax.set_title("ROC Curve Comparison")
+def plot_input_vs_average(input_vals, raw_data):
+    averages = raw_data[['Attendance','Hours_Studied','Previous_Scores']].mean()
 
-    st.pyplot(fig)
+    labels = list(input_vals.keys())
+    input_data = list(input_vals.values())
+    avg_data = [averages[f] for f in labels]
+
+    x = np.arange(len(labels))
+    width = 0.35
+
+    plt.figure()
+    plt.bar(x - width/2, input_data, width, label="Your Input")
+    plt.bar(x + width/2, avg_data, width, label="Average")
+
+    plt.xticks(x, labels)
+    plt.legend()
+    plt.title("Your Input vs Average")
+
+    st.pyplot(plt.gcf())
+    plt.clf()
 
 # =========================
-# MAIN FUNCTION
+# MAIN
 # =========================
 def main():
     st.set_page_config(layout="wide")
     st.title("🎓 Student Performance Prediction System")
 
-    df = load_data()
+    file_path = "StudentPerformanceFactors.csv"
 
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head())
-
-    X, y = preprocess_data(df)
-
-    X_train, X_test, y_train, y_test, scaler = split_and_scale(X, y)
+    X_train, X_test, y_train, y_test, scaler, raw_data = load_data(file_path)
 
     models = train_models(X_train, y_train)
+    results = evaluate_models(models, X_test, y_test)
 
-    results = evaluate(models, X_test, y_test)
-
-    # =====================
-    # RESULTS
-    # =====================
+    # =========================
+    # MODEL RESULTS
+    # =========================
     st.subheader("📊 Model Comparison")
 
     best_model = max(results, key=lambda x: results[x]["accuracy"])
     st.success(f"🏆 Best Model: {best_model}")
 
     for name in results:
+        res = results[name]
         st.write(f"### {name}")
-        st.write(results[name])
+        st.write(f"Accuracy: {res['accuracy']:.2f}")
+        st.write(f"Precision: {res['precision']:.2f}")
+        st.write(f"Recall: {res['recall']:.2f}")
+        st.write(f"F1 Score: {res['f1']:.2f}")
+        st.write(f"AUC: {res['auc']:.2f}")
 
-        plot_cm(y_test, results[name]["y_pred"], name)
+        plot_confusion_matrix(y_test, res["y_pred"], name)
 
-    plot_roc(results)
+    plot_roc_curve(results)
 
-    # =====================
-    # INPUT SECTION
-    # =====================
-    st.subheader("🔧 Prediction")
+    # =========================
+    # INPUT
+    # =========================
+    st.subheader("🔧 Input Student Data")
 
-    input_data = []
+    attendance = st.slider("Attendance (%)", 0, 100, 75)
+    study = st.slider("Study Hours", 0, 30, 10)
+    prev = st.slider("Previous Score", 0, 100, 60)
 
-    for col in X.columns:
-        val = st.slider(col, float(X[col].min()), float(X[col].max()), float(X[col].mean()))
-        input_data.append(val)
+    model_choice = st.selectbox("Select Model", ["SVM", "KNN", "ANN"])
 
-    model_choice = st.selectbox("Select Model", list(models.keys()))
+    # =========================
+    # PREDICT
+    # =========================
+    if st.button("🚀 Predict"):
+        sample = scaler.transform([[attendance, study, prev]])
+        prob = models[model_choice].predict_proba(sample)[0][1]
 
-    sample = scaler.transform([input_data])
-    pred = models[model_choice].predict(sample)[0]
+        estimated_score = prob * 100
+        grade = get_grade(estimated_score)
 
-    prob = models[model_choice].predict_proba(sample)[0][1]
+        st.metric("Estimated Score", f"{estimated_score:.2f}")
+        st.metric("Predicted Grade", grade)
+        st.progress(float(prob))
 
-    st.metric("Prediction", int(pred))
-    st.progress(float(prob))
+        # Feedback
+        if prob > 0.7:
+            st.success("High chance of success 🎉")
+        elif prob > 0.5:
+            st.warning("Moderate performance ⚠️")
+        else:
+            st.error("Low performance risk ❌")
 
-# =========================
-# RUN APP
+        # =========================
+        # EXTRA VISUAL
+        # =========================
+        input_vals = {
+            "Attendance": attendance,
+            "Hours_Studied": study,
+            "Previous_Scores": prev
+        }
+
+        st.subheader("📊 Input vs Average")
+        plot_input_vs_average(input_vals, raw_data)
+
 # =========================
 if __name__ == "__main__":
     main()
