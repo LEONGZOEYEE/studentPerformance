@@ -194,19 +194,25 @@ def main():
             assignment, exam,
             extra
         ]
-
+    
         prob = predict(models[model_choice], scaler, input_data)
-
-        st.metric("Probability of High Grade", f"{prob*100:.2f}%")
+    
+        grade = convert_to_grade(prob)
+    
+        st.metric("Predicted Grade", grade)
         st.progress(float(prob))
-
+    
+        st.write(f"Probability Score: {prob*100:.2f}%")
+    
         # feedback
-        if prob > 0.7:
-            st.success("Excellent student performance 🎉")
-        elif prob > 0.4:
-            st.warning("Average performance ⚠️")
+        if grade == "A":
+            st.success("Excellent performance 🎉")
+        elif grade == "B":
+            st.info("Good performance 👍")
+        elif grade == "C":
+            st.warning("Needs improvement ⚠️")
         else:
-            st.error("At risk ❌")
+            st.error("High risk of failure ❌")
 
 
 # =========================
