@@ -14,33 +14,45 @@ from sklearn.neural_network import MLPClassifier
 
 
 # =========================
+# GRADE CONVERTER (MISSING BEFORE)
+# =========================
+def convert_to_grade(prob):
+    if prob >= 0.80:
+        return "A"
+    elif prob >= 0.60:
+        return "B"
+    elif prob >= 0.40:
+        return "C"
+    else:
+        return "D"
+
+
+# =========================
 # LOAD + PREPROCESS DATA
 # =========================
 @st.cache_data
 def load_data(file_path):
     df = pd.read_csv(file_path)
 
-    # DROP ID (IMPORTANT)
     df = df.drop("student_id", axis=1)
 
-    # -------------------------
-    # ENCODE CATEGORICAL DATA
-    # -------------------------
+    # encode categorical
     le_gender = LabelEncoder()
     df["gender"] = le_gender.fit_transform(df["gender"])
 
     le_edu = LabelEncoder()
     df["education_level"] = le_edu.fit_transform(df["education_level"])
 
-    # binary target (A grade logic)
+    # convert numeric safely
     df["final_grade"] = pd.to_numeric(df["final_grade"], errors="coerce")
-    
-    df = df.dropna()
-    df = df.reset_index(drop=True)
+    df = df.dropna().reset_index(drop=True)
 
+    # ✅ CREATE TARGET FIRST (FIXED)
+    df["High_Grade"] = (df["final_grade"] >= 70).astype(int)
+
+    # NOW drop final_grade
     df = df.drop("final_grade", axis=1)
 
-    # SPLIT
     X = df.drop("High_Grade", axis=1)
     y = df["High_Grade"]
 
@@ -99,32 +111,7 @@ def evaluate_models(models, X_test, y_test):
 
 
 # =========================
-# PLOTS
-# =========================
-def plot_cm(y_true, y_pred, name):
-    fig, ax = plt.subplots()
-    sns.heatmap(confusion_matrix(y_true, y_pred),
-                annot=True, fmt="d", cmap="Blues", ax=ax)
-    ax.set_title(f"{name} Confusion Matrix")
-    st.pyplot(fig)
-
-
-def plot_roc(results):
-    fig, ax = plt.subplots()
-
-    for name in results:
-        ax.plot(results[name]["fpr"], results[name]["tpr"],
-                label=f"{name} (AUC={results[name]['auc']:.2f})")
-
-    ax.plot([0, 1], [0, 1], "--", color="gray")
-    ax.set_title("ROC Curve")
-    ax.legend()
-
-    st.pyplot(fig)
-
-
-# =========================
-# PREDICTION FUNCTION
+# PREDICTION
 # =========================
 def predict(model, scaler, input_data):
     sample = scaler.transform([input_data])
@@ -136,7 +123,7 @@ def predict(model, scaler, input_data):
 # =========================
 def main():
     st.set_page_config(layout="wide")
-    st.title("🎓 Student Performance Prediction (Enhanced Dataset)")
+    st.title("🎓 Student Performance Prediction")
 
     file_path = "student_performance_academic_5000.csv"
 
@@ -145,9 +132,6 @@ def main():
     models = train_models(X_train, y_train)
     results = evaluate_models(models, X_test, y_test)
 
-    # =========================
-    # MODEL RESULTS
-    # =========================
     st.subheader("📊 Model Comparison")
 
     best_model = max(results, key=lambda x: results[x]["accuracy"])
@@ -166,60 +150,58 @@ def main():
             col4.metric("F1", f"{res['f1']:.2f}")
             col5.metric("AUC", f"{res['auc']:.2f}")
 
-            plot_cm(y_test, res["y_pred"], name)
+            fig, ax = plt.subplots()
+            sns.heatmap(confusion_matrix(y_test, res["y_pred"]), annot=True, fmt="d", ax=ax)
+            st.pyplot(fig)
 
-    plot_roc(results)
-
+    # ROC
+    fig, ax = plt.subplots()
+    for name in results:
+        ax.plot(results[name]["fpr"], results[name]["tpr"], label=name)
+    ax.plot([0,1],[0,1],"--")
+    ax.legend()
+    st.pyplot(fig)
 
     # =========================
-    # INPUT SECTION
+    # INPUT
     # =========================
-    st.subheader("🔧 Predict Student Outcome")
+    st.subheader("🔧 Prediction")
 
     with st.form("form"):
         age = st.slider("Age", 15, 30, 18)
-        gender = st.selectbox("Gender (0=Female, 1=Male)", [0, 1])
-        education = st.selectbox("Education Level (0-2)", [0, 1, 2])
+        gender = st.selectbox("Gender (0=F,1=M)", [0,1])
+        education = st.selectbox("Education Level", [0,1,2])
 
-        study = st.slider("Study Hours/Week", 0, 50, 10)
-        attendance = st.slider("Attendance %", 0, 100, 75)
+        study = st.slider("Study Hours", 0, 50, 10)
+        attendance = st.slider("Attendance", 0, 100, 75)
         assignment = st.slider("Assignment Score", 0, 100, 70)
         exam = st.slider("Exam Score", 0, 100, 65)
-        extra = st.selectbox("Extra Curricular (0=No, 1=Yes)", [0, 1])
+        extra = st.selectbox("Extra Curricular", [0,1])
 
         model_choice = st.selectbox("Model", list(models.keys()))
         submit = st.form_submit_button("Predict")
 
     if submit:
-        input_data = [
-            age, gender, education,
-            study, attendance,
-            assignment, exam,
-            extra
-        ]
-    
+        input_data = [age, gender, education, study, attendance, assignment, exam, extra]
+
         prob = predict(models[model_choice], scaler, input_data)
-    
+
         grade = convert_to_grade(prob)
-    
+
         st.metric("Predicted Grade", grade)
         st.progress(float(prob))
-    
-        st.write(f"Probability Score: {prob*100:.2f}%")
-    
-        # feedback
+
+        st.write(f"Probability: {prob*100:.2f}%")
+
         if grade == "A":
-            st.success("Excellent performance 🎉")
+            st.success("Excellent 🎉")
         elif grade == "B":
-            st.info("Good performance 👍")
+            st.info("Good 👍")
         elif grade == "C":
-            st.warning("Needs improvement ⚠️")
+            st.warning("Average ⚠️")
         else:
-            st.error("High risk of failure ❌")
+            st.error("Risk ❌")
 
 
-# =========================
-# RUN
-# =========================
 if __name__ == "__main__":
     main()
