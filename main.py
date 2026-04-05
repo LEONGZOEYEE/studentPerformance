@@ -33,7 +33,10 @@ def load_data(file_path):
     df["education_level"] = le_edu.fit_transform(df["education_level"])
 
     # binary target (A grade logic)
-    df["High_Grade"] = (df["final_grade"] >= 70).astype(int)
+    df["final_grade"] = pd.to_numeric(df["final_grade"], errors="coerce")
+    
+    df = df.dropna()
+    df = df.reset_index(drop=True)
 
     df = df.drop("final_grade", axis=1)
 
