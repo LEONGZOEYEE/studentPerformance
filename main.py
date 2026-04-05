@@ -5,15 +5,29 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score,
-    f1_score, confusion_matrix, roc_auc_score
+    mean_absolute_error, mean_squared_error, r2_score
 )
 
-from sklearn.svm import SVC
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neural_network import MLPClassifier
+from sklearn.svm import SVR
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.neural_network import MLPRegressor
+
+
+# =========================
+# GRADE FUNCTION
+# =========================
+def get_grade(score):
+    if score >= 90: return "A+"
+    elif score >= 80: return "A"
+    elif score >= 75: return "A-"
+    elif score >= 70: return "B+"
+    elif score >= 65: return "B"
+    elif score >= 60: return "B-"
+    elif score >= 55: return "C+"
+    elif score >= 50: return "C"
+    else: return "F"
 
 
 # =========================
@@ -23,39 +37,19 @@ from sklearn.neural_network import MLPClassifier
 def load_data(file_path):
     data = pd.read_csv(file_path)
 
-    # =========================
-    # CREATE GRADES
-    # =========================
-    def get_grade(score):
-        if score >= 90: return "A+"
-        elif score >= 80: return "A"
-        elif score >= 75: return "A-"
-        elif score >= 70: return "B+"
-        elif score >= 65: return "B"
-        elif score >= 60: return "B-"
-        elif score >= 55: return "C+"
-        elif score >= 50: return "C"
-        else: return "F"
-
-    data["Grade"] = data["Exam_Score"].apply(get_grade)
-
-    le = LabelEncoder()
-    data["Grade"] = le.fit_transform(data["Grade"])
-
-    data = data[['Attendance', 'Hours_Studied', 'Previous_Scores', 'Grade']]
-
-    X = data.drop('Grade', axis=1)
-    y = data['Grade']
+    # Features & target
+    X = data[['Attendance', 'Hours_Studied', 'Previous_Scores']]
+    y = data['Exam_Score']   # 🔥 IMPORTANT: regression target
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
+        X, y, test_size=0.2, random_state=42
     )
 
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    return X_train, X_test, y_train, y_test, scaler, data, le
+    return X_train, X_test, y_train, y_test, scaler, data
 
 
 # =========================
@@ -65,14 +59,14 @@ def load_data(file_path):
 def train_models(X_train, y_train):
     models = {}
 
-    models["SVM"] = SVC(probability=True, random_state=42).fit(X_train, y_train)
+    models["SVM"] = SVR(kernel='rbf').fit(X_train, y_train)
 
-    models["KNN"] = KNeighborsClassifier(
+    models["KNN"] = KNeighborsRegressor(
         n_neighbors=7,
         weights="distance"
     ).fit(X_train, y_train)
 
-    models["ANN"] = MLPClassifier(
+    models["ANN"] = MLPRegressor(
         hidden_layer_sizes=(64, 32),
         max_iter=500,
         early_stopping=True,
@@ -91,20 +85,10 @@ def evaluate_models(models, X_test, y_test):
     for name, model in models.items():
         y_pred = model.predict(X_test)
 
-        # AUC SAFE (multiclass)
-        auc = None
-        if hasattr(model, "predict_proba"):
-            try:
-                auc = roc_auc_score(y_test, model.predict_proba(X_test), multi_class="ovr")
-            except:
-                auc = None
-
         results[name] = {
-            "accuracy": accuracy_score(y_test, y_pred),
-            "precision": precision_score(y_test, y_pred, average="weighted"),
-            "recall": recall_score(y_test, y_pred, average="weighted"),
-            "f1": f1_score(y_test, y_pred, average="weighted"),
-            "auc": auc,
+            "mae": mean_absolute_error(y_test, y_pred),
+            "rmse": np.sqrt(mean_squared_error(y_test, y_pred)),
+            "r2": r2_score(y_test, y_pred),
             "y_pred": y_pred
         }
 
@@ -112,17 +96,14 @@ def evaluate_models(models, X_test, y_test):
 
 
 # =========================
-# CONFUSION MATRIX
+# PLOT ACTUAL VS PREDICTED
 # =========================
-def plot_confusion_matrix(y_true, y_pred, model_name):
-    cm = confusion_matrix(y_true, y_pred)
-
+def plot_results(y_test, y_pred, model_name):
     plt.figure(figsize=(6,4))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
-
-    plt.title(f"{model_name} Confusion Matrix")
-    plt.xlabel("Predicted Grade")
-    plt.ylabel("Actual Grade")
+    plt.scatter(y_test, y_pred)
+    plt.xlabel("Actual Score")
+    plt.ylabel("Predicted Score")
+    plt.title(f"{model_name} Prediction")
 
     st.pyplot(plt.gcf())
     plt.clf()
@@ -134,12 +115,12 @@ def plot_confusion_matrix(y_true, y_pred, model_name):
 def main():
     st.set_page_config(layout="wide")
 
-    st.title("🎓 Student Grade Prediction System")
-    st.caption("Predict final academic grade using ML models")
+    st.title("🎓 Student Score & Grade Prediction System")
+    st.caption("Predict exam score using ML → convert to grade")
 
     file_path = "StudentPerformanceFactors.csv"
 
-    X_train, X_test, y_train, y_test, scaler, raw_data, le = load_data(file_path)
+    X_train, X_test, y_train, y_test, scaler, raw_data = load_data(file_path)
 
     models = train_models(X_train, y_train)
     results = evaluate_models(models, X_test, y_test)
@@ -150,7 +131,7 @@ def main():
     st.subheader("📊 Model Comparison")
     st.divider()
 
-    best_model = max(results, key=lambda x: results[x]["accuracy"])
+    best_model = max(results, key=lambda x: results[x]["r2"])
     st.success(f"🏆 Best Model: {best_model}")
 
     tabs = st.tabs(["SVM", "KNN", "ANN"])
@@ -159,21 +140,14 @@ def main():
         with tabs[i]:
             res = results[name]
 
-            col1, col2, col3, col4, col5 = st.columns(5)
+            col1, col2, col3 = st.columns(3)
 
-            col1.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
-            col2.metric("Precision", f"{res['precision']:.2f}")
-            col3.metric("Recall", f"{res['recall']:.2f}")
-            col4.metric("F1 Score", f"{res['f1']:.2f}")
-            
-            # AUC (safe check)
-            if res.get("auc") is not None:
-                col5.metric("AUC (OvR)", f"{res['auc']:.2f}")
-            else:
-                col5.metric("AUC (OvR)", "N/A")
+            col1.metric("MAE", f"{res['mae']:.2f}")
+            col2.metric("RMSE", f"{res['rmse']:.2f}")
+            col3.metric("R² Score", f"{res['r2']:.2f}")
 
-            st.subheader("Confusion Matrix")
-            plot_confusion_matrix(y_test, res["y_pred"], name)
+            st.subheader("Actual vs Predicted")
+            plot_results(y_test, res["y_pred"], name)
 
     # =========================
     # INPUT
@@ -192,22 +166,18 @@ def main():
         sample = scaler.transform([[attendance, study, prev]])
         model = models[model_choice]
 
-        pred_class = model.predict(sample)[0]
-        grade = le.inverse_transform([pred_class])[0]
+        pred_score = model.predict(sample)[0]
+        grade = get_grade(pred_score)
 
-        prob = np.max(model.predict_proba(sample)) if hasattr(model, "predict_proba") else 1.0
-
+        st.success(f"📊 Predicted Score: {pred_score:.2f}")
         st.success(f"🎓 Predicted Grade: {grade}")
-        st.progress(float(prob))
 
         # =========================
-        # FIXED EXPLANATION (IMPORTANT)
+        # PERFORMANCE INSIGHT
         # =========================
         st.subheader("🧠 Performance Insight")
 
-        high_students = raw_data[raw_data["Grade"] >= raw_data["Grade"].quantile(0.75)]
-
-        avg = high_students[["Attendance", "Hours_Studied", "Previous_Scores"]].mean()
+        avg = raw_data[['Attendance', 'Hours_Studied', 'Previous_Scores']].mean()
 
         input_vals = {
             "Attendance": attendance,
@@ -217,9 +187,9 @@ def main():
 
         for k in input_vals:
             if input_vals[k] >= avg[k]:
-                st.write(f"✔ {k}: above strong students average")
+                st.write(f"✔ {k}: above average")
             else:
-                st.write(f"⚠ {k}: below strong students average")
+                st.write(f"⚠ {k}: below average")
 
         # =========================
         # DOWNLOAD
@@ -229,10 +199,15 @@ def main():
             "Study Hours": [study],
             "Previous Score": [prev],
             "Model": [model_choice],
+            "Predicted Score": [pred_score],
             "Predicted Grade": [grade]
         })
 
-        st.download_button("📥 Download Result", df.to_csv(index=False), "grade_prediction.csv")
+        st.download_button(
+            "📥 Download Result",
+            df.to_csv(index=False),
+            "grade_prediction.csv"
+        )
 
 
 if __name__ == "__main__":
