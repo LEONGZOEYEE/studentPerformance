@@ -5,40 +5,51 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score, roc_curve, auc
+
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 
 
 # =========================
-# LOAD DATA
+# LOAD + PREPROCESS DATA
 # =========================
 @st.cache_data
 def load_data(file_path):
-    data = pd.read_csv(file_path)
+    df = pd.read_csv(file_path)
 
-    # Safety check (prevents crash)
-    if "Exam_Score" not in data.columns:
-        raise ValueError("Dataset must contain 'Exam_Score' column")
+    # DROP ID (IMPORTANT)
+    df = df.drop("student_id", axis=1)
 
-    data["High_Score"] = (data["Exam_Score"] >= 70).astype(int)
+    # -------------------------
+    # ENCODE CATEGORICAL DATA
+    # -------------------------
+    le_gender = LabelEncoder()
+    df["gender"] = le_gender.fit_transform(df["gender"])
 
-    data = data[["Attendance", "Hours_Studied", "Previous_Scores", "High_Score"]]
+    le_edu = LabelEncoder()
+    df["education_level"] = le_edu.fit_transform(df["education_level"])
 
-    X = data.drop("High_Score", axis=1)
-    y = data["High_Score"]
+    # binary target (A grade logic)
+    df["High_Grade"] = (df["final_grade"] >= 70).astype(int)
+
+    df = df.drop("final_grade", axis=1)
+
+    # SPLIT
+    X = df.drop("High_Grade", axis=1)
+    y = df["High_Grade"]
 
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
+        X, y, test_size=0.3, random_state=42, stratify=y
     )
 
     scaler = StandardScaler()
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    return X_train, X_test, y_train, y_test, X.columns, scaler, data
+    return X_train, X_test, y_train, y_test, X.columns, scaler, df
 
 
 # =========================
@@ -46,12 +57,16 @@ def load_data(file_path):
 # =========================
 @st.cache_resource
 def train_models(X_train, y_train):
-    return {
-        "SVM": SVC(probability=True, random_state=42).fit(X_train, y_train),
-        "KNN": KNeighborsClassifier(n_neighbors=5).fit(X_train, y_train),
-        "ANN": MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500,
-                              early_stopping=True, random_state=42).fit(X_train, y_train)
+    models = {
+        "SVM": SVC(probability=True, random_state=42),
+        "KNN": KNeighborsClassifier(n_neighbors=5),
+        "ANN": MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=500, random_state=42)
     }
+
+    for m in models.values():
+        m.fit(X_train, y_train)
+
+    return models
 
 
 # =========================
@@ -83,14 +98,10 @@ def evaluate_models(models, X_test, y_test):
 # =========================
 # PLOTS
 # =========================
-def plot_confusion_matrix(y_true, y_pred, name):
-    cm = confusion_matrix(y_true, y_pred)
-
+def plot_cm(y_true, y_pred, name):
     fig, ax = plt.subplots()
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=["Low", "High"],
-                yticklabels=["Low", "High"], ax=ax)
-
+    sns.heatmap(confusion_matrix(y_true, y_pred),
+                annot=True, fmt="d", cmap="Blues", ax=ax)
     ax.set_title(f"{name} Confusion Matrix")
     st.pyplot(fig)
 
@@ -103,38 +114,17 @@ def plot_roc(results):
                 label=f"{name} (AUC={results[name]['auc']:.2f})")
 
     ax.plot([0, 1], [0, 1], "--", color="gray")
-    ax.set_title("ROC Curve Comparison")
+    ax.set_title("ROC Curve")
     ax.legend()
 
     st.pyplot(fig)
 
 
-def plot_input_vs_average(input_vals, averages):
-    fig, ax = plt.subplots()
-
-    labels = list(input_vals.keys())
-    input_data = list(input_vals.values())
-    avg_data = [averages[f] for f in labels]
-
-    x = np.arange(len(labels))
-    width = 0.35
-
-    ax.bar(x - width/2, input_data, width, label="Input")
-    ax.bar(x + width/2, avg_data, width, label="Successful Avg")
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(labels)
-    ax.set_title("Input vs Successful Students")
-
-    ax.legend()
-    st.pyplot(fig)
-
-
 # =========================
-# PREDICTION FUNCTION (IMPORTANT FIX)
+# PREDICTION FUNCTION
 # =========================
-def predict_performance(model, scaler, input_values):
-    sample = scaler.transform([input_values])
+def predict(model, scaler, input_data):
+    sample = scaler.transform([input_data])
     return model.predict_proba(sample)[0][1]
 
 
@@ -143,9 +133,9 @@ def predict_performance(model, scaler, input_values):
 # =========================
 def main():
     st.set_page_config(layout="wide")
-    st.title("🎓 Student Performance Prediction System")
+    st.title("🎓 Student Performance Prediction (Enhanced Dataset)")
 
-    file_path = "StudentPerformanceFactors.csv"
+    file_path = "student_performance_academic_5000.csv"
 
     X_train, X_test, y_train, y_test, feature_names, scaler, raw_data = load_data(file_path)
 
@@ -153,7 +143,7 @@ def main():
     results = evaluate_models(models, X_test, y_test)
 
     # =========================
-    # MODEL SECTION
+    # MODEL RESULTS
     # =========================
     st.subheader("📊 Model Comparison")
 
@@ -173,67 +163,50 @@ def main():
             col4.metric("F1", f"{res['f1']:.2f}")
             col5.metric("AUC", f"{res['auc']:.2f}")
 
-            plot_confusion_matrix(y_test, res["y_pred"], name)
+            plot_cm(y_test, res["y_pred"], name)
 
-    plot_roc(results)  # FIXED (only once)
+    plot_roc(results)
 
 
     # =========================
     # INPUT SECTION
     # =========================
-    st.subheader("🔧 Predict Performance")
+    st.subheader("🔧 Predict Student Outcome")
 
-    with st.form("input_form"):
-        attendance = st.slider("Attendance (%)", 0, 100, 75)
-        study = st.slider("Study Hours", 0, 30, 10)
-        prev = st.slider("Previous Score", 0, 100, 60)
+    with st.form("form"):
+        age = st.slider("Age", 15, 30, 18)
+        gender = st.selectbox("Gender (0=Female, 1=Male)", [0, 1])
+        education = st.selectbox("Education Level (0-2)", [0, 1, 2])
 
-        model_choice = st.selectbox("Choose Model", list(models.keys()))
+        study = st.slider("Study Hours/Week", 0, 50, 10)
+        attendance = st.slider("Attendance %", 0, 100, 75)
+        assignment = st.slider("Assignment Score", 0, 100, 70)
+        exam = st.slider("Exam Score", 0, 100, 65)
+        extra = st.selectbox("Extra Curricular (0=No, 1=Yes)", [0, 1])
+
+        model_choice = st.selectbox("Model", list(models.keys()))
         submit = st.form_submit_button("Predict")
 
     if submit:
-        input_values = [attendance, study, prev]
+        input_data = [
+            age, gender, education,
+            study, attendance,
+            assignment, exam,
+            extra
+        ]
 
-        prob = predict_performance(models[model_choice], scaler, input_values)
+        prob = predict(models[model_choice], scaler, input_data)
 
-        st.metric("Probability of High Score", f"{prob*100:.2f}%")
+        st.metric("Probability of High Grade", f"{prob*100:.2f}%")
         st.progress(float(prob))
 
         # feedback
         if prob > 0.7:
-            st.success("High chance of success 🎉")
+            st.success("Excellent student performance 🎉")
         elif prob > 0.4:
-            st.warning("Moderate performance ⚠️")
+            st.warning("Average performance ⚠️")
         else:
-            st.error("Low performance risk ❌")
-
-        # explanation
-        st.subheader("🧠 Explanation")
-
-        averages = raw_data[raw_data["High_Score"] == 1][
-            ["Attendance", "Hours_Studied", "Previous_Scores"]
-        ].mean()
-
-        input_vals = dict(zip(["Attendance", "Hours_Studied", "Previous_Scores"], input_values))
-
-        for k in input_vals:
-            if input_vals[k] >= averages[k]:
-                st.write(f"✅ {k}: above average")
-            else:
-                st.write(f"⚠️ {k}: below average")
-
-        plot_input_vs_average(input_vals, averages)
-
-        # download
-        df = pd.DataFrame([{
-            "Attendance": attendance,
-            "Study Hours": study,
-            "Previous Score": prev,
-            "Model": model_choice,
-            "Probability": prob
-        }])
-
-        st.download_button("Download Result", df.to_csv(index=False), "result.csv")
+            st.error("At risk ❌")
 
 
 # =========================
