@@ -139,16 +139,19 @@ def evaluate_models(models, X_test, y_test):
 def plot_confusion_matrix(y_true, y_pred, model_name):
     cm = confusion_matrix(y_true, y_pred)
 
+    labels = [reverse_grade[i] for i in sorted(reverse_grade.keys())]
+
     plt.figure(figsize=(6,4))
-    sns.heatmap(cm, annot=True, fmt="d")
+    sns.heatmap(cm, annot=True, fmt="d",
+                xticklabels=labels,
+                yticklabels=labels)
 
     plt.title(f"{model_name} Confusion Matrix")
-    plt.xlabel("Predicted")
-    plt.ylabel("Actual")
+    plt.xlabel("Predicted Grade")
+    plt.ylabel("Actual Grade")
 
     st.pyplot(plt.gcf())
     plt.clf()
-
 
 # =========================
 # MAIN APP
@@ -185,7 +188,11 @@ def main():
             col2.metric("Precision", f"{res['precision']:.2f}")
             col3.metric("Recall", f"{res['recall']:.2f}")
             col4.metric("F1 Score", f"{res['f1']:.2f}")
-            col5.metric("AUC", f"{res['auc']:.2f}" if res["auc"] else "N/A")
+            col5.metric("Model Type", name)
+
+            st.subheader("📊 Grade Distribution")
+            grade_counts = raw_data["Grade"].value_counts().sort_index()
+            st.bar_chart(grade_counts)
 
             st.subheader("Confusion Matrix")
             plot_confusion_matrix(y_test, res["y_pred"], name)
@@ -210,7 +217,10 @@ def main():
         pred = model.predict(sample)[0]
         grade = reverse_grade[pred]
 
-        prob = np.max(model.predict_proba(sample))
+        if hasattr(model, "predict_proba"):
+            prob = np.max(model.predict_proba(sample))
+        else:
+            prob = 1.0
 
         st.success(f"🎓 Predicted Grade: {grade}")
         st.progress(float(prob))
