@@ -5,11 +5,15 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score, roc_curve, auc
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
+
+# 设置matplotlib中文/防乱码
+plt.rcParams['font.sans-serif'] = ['SimHei']
+plt.rcParams['axes.unicode_minus'] = False
 
 # =========================
 # LOAD DATA
@@ -17,31 +21,11 @@ from sklearn.neural_network import MLPClassifier
 @st.cache_data
 def load_data(file_path):
     data = pd.read_csv(file_path)
+    data['High_Score'] = data['Exam_Score'].apply(lambda x: 1 if x >= 70 else 0)
+    data = data[['Attendance', 'Hours_Studied', 'Previous_Scores', 'High_Score']]
 
-    # 🎯 Convert score → Grade
-    def assign_grade(score):
-        if score >= 80:
-            return "A"
-        elif score >= 70:
-            return "B"
-        elif score >= 60:
-            return "C"
-        elif score >= 50:
-            return "D"
-        else:
-            return "F"
-
-    data['Grade'] = data['Exam_Score'].apply(assign_grade)
-
-    # Use selected features
-    data = data[['Attendance', 'Hours_Studied', 'Previous_Scores', 'Grade']]
-
-    X = data.drop('Grade', axis=1)
-    y = data['Grade']
-
-    # Encode labels
-    label_encoder = LabelEncoder()
-    y = label_encoder.fit_transform(y)
+    X = data.drop('High_Score', axis=1)
+    y = data['High_Score']
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42
@@ -51,8 +35,7 @@ def load_data(file_path):
     X_train = scaler.fit_transform(X_train)
     X_test = scaler.transform(X_test)
 
-    return X_train, X_test, y_train, y_test, X.columns, scaler, data, label_encoder
-
+    return X_train, X_test, y_train, y_test, X.columns, scaler, data
 
 # =========================
 # TRAIN MODELS
@@ -60,7 +43,6 @@ def load_data(file_path):
 @st.cache_resource
 def train_models(X_train, y_train):
     models = {}
-
     models['SVM'] = SVC(probability=True, random_state=42).fit(X_train, y_train)
     models['KNN'] = KNeighborsClassifier(n_neighbors=5).fit(X_train, y_train)
     models['ANN'] = MLPClassifier(
@@ -69,147 +51,166 @@ def train_models(X_train, y_train):
         early_stopping=True,
         random_state=42
     ).fit(X_train, y_train)
-
     return models
-
 
 # =========================
 # EVALUATE MODELS
 # =========================
 def evaluate_models(models, X_test, y_test):
     results = {}
-
     for name, model in models.items():
         y_pred = model.predict(X_test)
-
+        y_prob = model.predict_proba(X_test)[:, 1]
+        fpr, tpr, _ = roc_curve(y_test, y_prob)
         results[name] = {
             "accuracy": accuracy_score(y_test, y_pred),
-            "precision": precision_score(y_test, y_pred, average='weighted'),
-            "recall": recall_score(y_test, y_pred, average='weighted'),
-            "f1": f1_score(y_test, y_pred, average='weighted'),
+            "precision": precision_score(y_test, y_pred),
+            "recall": recall_score(y_test, y_pred),
+            "f1": f1_score(y_test, y_pred),
+            "auc": auc(fpr, tpr),
+            "fpr": fpr,
+            "tpr": tpr,
             "y_pred": y_pred
         }
-
     return results
-
 
 # =========================
 # PLOTS
 # =========================
-def plot_confusion_matrix(y_true, y_pred, model_name, label_encoder):
+def plot_confusion_matrix(y_true, y_pred, model_name):
+    fig, ax = plt.subplots(figsize=(4,3))
     cm = confusion_matrix(y_true, y_pred)
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", ax=ax,
+                xticklabels=["低分", "高分"],
+                yticklabels=["低分", "高分"])
+    ax.set_ylabel("真实值")
+    ax.set_xlabel("预测值")
+    ax.set_title(f"{model_name} 混淆矩阵")
+    st.pyplot(fig)
 
-    labels = label_encoder.classes_
+def plot_roc_curve(results):
+    fig, ax = plt.subplots(figsize=(6,4))
+    for name in results:
+        ax.plot(results[name]["fpr"], results[name]["tpr"],
+                 label=f"{name} (AUC={results[name]['auc']:.2f})")
+    ax.plot([0, 1], [0, 1], linestyle='--', color='gray', label="随机猜测")
+    ax.set_xlabel("假正率")
+    ax.set_ylabel("真正率")
+    ax.set_title("ROC曲线对比")
+    ax.legend()
+    st.pyplot(fig)
 
-    plt.figure(figsize=(4,3))
-    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
-                xticklabels=labels,
-                yticklabels=labels)
-    plt.ylabel("Actual")
-    plt.xlabel("Predicted")
-    plt.title(f"{model_name} Confusion Matrix")
-    st.pyplot(plt.gcf())
-    plt.clf()
-
+def plot_input_vs_average(input_vals, averages):
+    fig, ax = plt.subplots(figsize=(5,3))
+    labels = list(input_vals.keys())
+    input_data = list(input_vals.values())
+    avg_data = [averages[f] for f in labels]
+    x = np.arange(len(labels))
+    width = 0.35
+    ax.bar(x - width/2, input_data, width, label="你的输入", color='skyblue')
+    ax.bar(x + width/2, avg_data, width, label="优秀学生均值", color='orange')
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels)
+    ax.set_ylabel("数值")
+    ax.set_title("你的数据 VS 优秀学生均值")
+    ax.legend()
+    st.pyplot(fig)
 
 # =========================
 # MAIN APP
 # =========================
 def main():
     st.set_page_config(layout="wide")
-
-    st.title("🎓 Student Grade Prediction System")
-    st.caption("Predict student final grade (A–F)")
+    st.title("🎓 学生成绩预测系统")
+    st.caption("预测考试高分概率（≥70分）")
 
     file_path = "StudentPerformanceFactors.csv"
+    X_train, X_test, y_train, y_test, feature_names, scaler, raw_data = load_data(file_path)
 
-    X_train, X_test, y_train, y_test, feature_names, scaler, raw_data, label_encoder = load_data(file_path)
-
-    with st.spinner("Training models..."):
+    with st.spinner("模型训练中..."):
         models = train_models(X_train, y_train)
 
     results = evaluate_models(models, X_test, y_test)
 
-    # =========================
-    # MODEL COMPARISON
-    # =========================
-    st.subheader("📊 Model Comparison")
+    # 模型对比区
+    st.subheader("📊 模型性能对比")
     st.divider()
-
     best_model = max(results, key=lambda x: results[x]["accuracy"])
-    st.success(f"🏆 Best Model: {best_model}")
+    st.success(f"🏆 最优模型：{best_model}")
 
     tabs = st.tabs(["SVM", "KNN", "ANN"])
-
     for i, name in enumerate(["SVM", "KNN", "ANN"]):
         with tabs[i]:
             res = results[name]
+            c1,c2,c3,c4,c5 = st.columns(5)
+            c1.metric("准确率", f"{res['accuracy']*100:.2f}%")
+            c2.metric("精确率", f"{res['precision']:.2f}")
+            c3.metric("召回率", f"{res['recall']:.2f}")
+            c4.metric("F1分数", f"{res['f1']:.2f}")
+            c5.metric("AUC", f"{res['auc']:.2f}")
+            st.subheader("混淆矩阵")
+            plot_confusion_matrix(y_test, res["y_pred"], name)
+            st.subheader("ROC曲线")
+            plot_roc_curve(results)
 
-            col1, col2, col3, col4 = st.columns(4)
-            col1.metric("Accuracy", f"{res['accuracy']*100:.2f}%")
-            col2.metric("Precision", f"{res['precision']:.2f}")
-            col3.metric("Recall", f"{res['recall']:.2f}")
-            col4.metric("F1 Score", f"{res['f1']:.2f}")
+    # 输入区域
+    st.subheader("🔧 输入学生参数")
+    with st.form("pred_form"):
+        attendance = st.slider("出勤率(%)", 0, 100, 75)
+        study = st.slider("每日学习时长", 0, 30, 10)
+        prev = st.slider("过往成绩", 0, 100, 60)
+        model_choice = st.selectbox("选择预测模型", ["SVM", "KNN", "ANN"])
+        submit = st.form_submit_button("🚀 开始预测")
 
-            st.subheader("📈 Confusion Matrix")
-            plot_confusion_matrix(y_test, res["y_pred"], name, label_encoder)
-
-    # =========================
-    # INPUT SECTION
-    # =========================
-    st.subheader("🔧 Input Parameters")
-
-    with st.form("prediction_form"):
-        attendance = st.slider("Attendance (%)", 0, 100, 75)
-        study = st.slider("Study Hours", 0, 30, 10)
-        prev = st.slider("Previous Score", 0, 100, 60)
-
-        model_choice = st.selectbox("Choose Model", ["SVM", "KNN", "ANN"])
-
-        submit = st.form_submit_button("🚀 Predict")
-
-    # =========================
-    # PREDICTION
-    # =========================
+    # 预测逻辑（只保留一处，消除重复bug）
     if submit:
         sample = scaler.transform([[attendance, study, prev]])
+        prob = models[model_choice].predict_proba(sample)[0][1]
 
-        prediction = models[model_choice].predict(sample)[0]
-        grade = label_encoder.inverse_transform([prediction])[0]
+        st.subheader("🔍 预测结果")
+        st.metric("高分概率", f"{prob*100:.2f}%")
+        st.progress(float(prob))
 
-        probs = models[model_choice].predict_proba(sample)[0]
-        confidence = np.max(probs)
-
-        st.subheader("🔍 Prediction Result")
-        st.metric("Predicted Grade", grade)
-        st.metric("Confidence", f"{confidence*100:.2f}%")
-
-        # Feedback
-        if grade == "A":
-            st.success("Excellent performance 🎉")
-        elif grade == "B":
-            st.success("Good job 👍")
-        elif grade == "C":
-            st.warning("Average performance ⚠️")
-        elif grade == "D":
-            st.warning("Below average 😬")
+        # 评价提示
+        if prob > 0.7:
+            st.success("🎉 高分概率很高！")
+        elif prob > 0.4:
+            st.warning("⚠️ 中等水平，还有提升空间")
         else:
-            st.error("High risk of failure ❌")
+            st.error("❌ 成绩风险较高，建议加强学习/出勤")
 
-        # =========================
-        # DOWNLOAD RESULT
-        # =========================
-        df = pd.DataFrame({
-            "Attendance": [attendance],
-            "Study Hours": [study],
-            "Previous Score": [prev],
-            "Model": [model_choice],
-            "Predicted Grade": [grade],
-            "Confidence": [confidence]
+        # 对比解释
+        st.subheader("🧠 结果解释")
+        avg_high = raw_data[raw_data['High_Score']==1][['Attendance','Hours_Studied','Previous_Scores']].mean()
+        input_vals = {
+            "出勤率": attendance,
+            "学习时长": study,
+            "过往成绩": prev
+        }
+        avg_map = {
+            "出勤率": avg_high["Attendance"],
+            "学习时长": avg_high["Hours_Studied"],
+            "过往成绩": avg_high["Previous_Scores"]
+        }
+
+        for k,v in input_vals.items():
+            if v >= avg_map[k]:
+                st.write(f"✅ {k}({v}) 高于优秀学生均值({avg_map[k]:.1f})")
+            else:
+                st.write(f"⚠️ {k}({v}) 低于优秀学生均值({avg_map[k]:.1f})")
+
+        plot_input_vs_average(input_vals, avg_map)
+
+        # 下载报告
+        df_out = pd.DataFrame({
+            "出勤率":[attendance],
+            "学习时长":[study],
+            "过往成绩":[prev],
+            "选用模型":[model_choice],
+            "高分概率(%)":[round(prob*100,2)]
         })
-
-        st.download_button("📥 Download Result", df.to_csv(index=False), "result.csv")
-
+        st.download_button("📥 下载预测报告", df_out.to_csv(index=False), "预测结果.csv")
 
 if __name__ == "__main__":
     main()
+    
